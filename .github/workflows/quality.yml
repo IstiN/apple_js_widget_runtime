@@ -146,11 +146,39 @@ jobs:
 
       - name: Export LCOV coverage (iOS)
         run: |
-          swift scripts/xcresult-to-lcov.swift --xcresult Coverage.xcresult --out coverage-ios.lcov
-          if [ ! -s coverage-ios.lcov ]; then
-            echo "coverage-ios.lcov missing or empty" >&2
-            exit 1
+          set -euo pipefail
+          xcrun xccov view --report --json Coverage.xcresult > /tmp/xccov-dump.json || true
+          swift scripts/xcresult-to-lcov.swift --xcresult Coverage.xcresult --out coverage-ios.lcov || true
+          if [ -s coverage-ios.lcov ] && grep -q "^SF:" coverage-ios.lcov; then
+            echo "xccov path OK: $(grep -c '^SF:' coverage-ios.lcov) records"
+          else
+            echo "xccov path yielded no records; llvm-cov fallback"
+            PROFDATA_LIST=$(find Coverage.xcresult -name "*.profdata")
+            echo "profdatas: $PROFDATA_LIST"
+            test -n "$PROFDATA_LIST"
+            # shellcheck disable=SC2086
+            xcrun llvm-profdata merge -sparse $PROFDATA_LIST -o Coverage-ios.profdata
+            DD=$(dirname "$(find ~/Library/Developer/Xcode/DerivedData -maxdepth 1 -name 'JSRUIDemo-*' | head -1)")/Build/Products/Debug-iphonesimulator
+            echo "products: $DD"
+            rm -f coverage-ios.lcov /tmp/raw-ios-*.lcov
+            i=0
+            for BIN in $(find "$DD" \( -name "JSRCore" -o -name "JSRUIKit" -o -name "JSRUIKitTests" \) | grep -E "framework/|xctest/" | sort -u); do
+              echo "exporting coverage from: $BIN"
+              # one export per binary (a combined multi-binary export drops records)
+              xcrun llvm-cov export -format=lcov -instr-profile Coverage-ios.profdata \
+                "$BIN" > "/tmp/raw-ios-$i.lcov" 2>/dev/null || true
+              i=$((i+1))
+            done
+            echo "exported $i binaries"
+            test "$i" -gt 0
+            cat /tmp/raw-ios-*.lcov \
+              | awk 'BEGIN{keep=0} /^SF:/{keep=($0 ~ "^SF:.*/Sources/(JSRCore|JSRUIKit)/")} {if(keep)print}' \
+              | awk '/^SF:/{p=$0; if(seen[p]){skip=1; next} seen[p]=1} {if(!skip)print} /^end_of_record/{skip=0}' \
+              > coverage-ios.lcov
           fi
+          test -s coverage-ios.lcov
+          grep -q "^SF:" coverage-ios.lcov
+          echo "coverage-ios.lcov: $(grep -c '^SF:' coverage-ios.lcov) records"
 
       - name: Build crap4swift (pinned)
         run: swift build -c release --package-path .conformance/crap4swift
@@ -184,5 +212,6 @@ jobs:
           path: |
             /tmp/apple-ios/
             /tmp/apple-ios-report.md
+            /tmp/xccov-dump.json
             coverage-ios.lcov
           if-no-files-found: warn
