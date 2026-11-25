@@ -13,7 +13,7 @@ final class UIKitContainerView: UIView {}
 
 public final class UIKitMapper: NSObject {
     /// Host-to-JS lane for widget events (callEvent on the runtime).
-    var onEvent: ((_ actionId: String, _ payloadJson: String) -> Void)?
+    public var onEvent: ((_ actionId: String, _ payloadJson: String) -> Void)?
 
     let container: UIView
     /// The reconciler operations applied by the last render (patch, not rebuild).
@@ -29,7 +29,7 @@ public final class UIKitMapper: NSObject {
     /// The tree the CURRENT views/records reflect (the last applied render).
     private var lastTree: WidgetNode?
 
-    init(container: UIView) {
+    public init(container: UIView) {
         self.container = container
         super.init()
         container.translatesAutoresizingMaskIntoConstraints = false
