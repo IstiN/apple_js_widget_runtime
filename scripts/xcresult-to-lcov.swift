@@ -51,7 +51,7 @@ do {
 } catch {
     die("xcrun xccov failed to start: \(error)")
 }
-let data = pipe.fileHandleForData()
+let data = pipe.fileHandleForReading.readDataToEndOfFile()
 xccov.waitUntilExit()
 guard xccov.terminationStatus == 0, !data.isEmpty else {
     die("xcrun xccov view --report --json exited \(xccov.terminationStatus); use the llvm-cov fallback documented in the script header")
