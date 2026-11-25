@@ -18,3 +18,31 @@ Engine: JavaScriptCore (system framework). QuickJS parity via js_runtime#2 adapt
 `JSContext` runs on macOS too → conformance fixtures execute on the Mac
 directly (structure L0/L1 without any device), UIKit/AppKit mappers verified
 by the same AUI dumps on simulator/host.
+
+## Quality gate
+
+The `Quality` workflow gates every push and PR (`macos` job on macos-15).
+The same two commands locally (repo root, `$ROOT` = fleet root):
+
+```bash
+# coverage of the unit tests → LCOV (plan 1.7); per-binary export + dedupe
+# (a combined two-binary export drops the second binary's records)
+swift test --enable-code-coverage
+xcrun llvm-profdata merge -sparse .build/debug/codecov/default.profdata -o Coverage.profdata
+rm -f coverage.lcov
+for BIN in JSRCoreTests JSRAppKitTests; do
+  xcrun llvm-cov export -format=lcov -instr-profile Coverage.profdata \
+    ".build/debug/$BIN.xctest/Contents/MacOS/$BIN"
+done | awk 'BEGIN{keep=0} /^SF:/{keep=($0 ~ "^SF:.*/Sources/(JSRCore|JSRAppKit)/")} {if(keep)print}' \
+  | awk '/^SF:/{p=$0; if(seen[p]){skip=1; next} seen[p]=1} {if(!skip)print} /^end_of_record/{skip=0}' \
+  > coverage.lcov
+
+# CRAP-4 gate, first-party sources only, threshold 8.0 (pinned crap4swift)
+bash scripts/fetch-conformance.sh
+swift build -c release --package-path .conformance/crap4swift
+.conformance/crap4swift/.build/release/crap4swift Sources --coverage coverage.lcov --threshold 8.0
+```
+
+A missing or empty `coverage.lcov` fails the job. A function above 8.0 is
+split or gets more unit tests — the threshold is never raised and no function
+is excluded.

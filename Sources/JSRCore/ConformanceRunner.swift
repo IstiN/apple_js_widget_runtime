@@ -117,27 +117,41 @@ public final class ConformanceRunner {
         self.outDir = outDir
     }
 
-    /// Runs one fixture; returns the result dict it wrote (or would write).
-    @discardableResult
-    public func run(fixture id: String, driverFactory: (JsWidgetRuntime, HostRecorder, ChannelRegistry, JsEngine) -> InteractionDriver = { runtime, recorder, registry, engine in
-        TreeInteractionDriver(runtime: runtime, recorder: recorder, registry: registry, engine: engine)
-    }) throws -> [String: Any] {
-        let fixtureDir = fixturesDir + "/" + id
-        guard let widget = try? String(contentsOfFile: fixtureDir + "/widget.js", encoding: .utf8),
-              let metaData = try? Data(contentsOf: URL(fileURLWithPath: fixtureDir + "/meta.json")),
+    /// Loads the fixture files; nil-throwing wrapper for the widget/meta read.
+    struct FixtureFiles {
+        let widget: String
+        let meta: [String: Any]
+        let expected: [String: Any]
+        let dir: String
+    }
+
+    static func loadFixture(fixturesDir: String, id: String) throws -> FixtureFiles {
+        let dir = fixturesDir + "/" + id
+        guard let widget = try? String(contentsOfFile: dir + "/widget.js", encoding: .utf8),
+              let metaData = try? Data(contentsOf: URL(fileURLWithPath: dir + "/meta.json")),
               let meta = (try? JSONSerialization.jsonObject(with: metaData)) as? [String: Any] else {
             throw ConformanceRunnerError.fixtureNotFound(id)
         }
-        let expected = (try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: fixtureDir + "/expected.json")))) as? [String: Any] ?? [:]
+        let expected = (try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: dir + "/expected.json")))) as? [String: Any] ?? [:]
+        return FixtureFiles(widget: widget, meta: meta, expected: expected, dir: dir)
+    }
 
-        // capabilities: extended needs the matching host support; the host run
-        // supports network, storage, secrets, assets (in-memory/fixture defaults)
+    /// First capability the host does not support, if any (plan 1.4).
+    static func unsupportedCapability(in meta: [String: Any]) -> String? {
         let capabilities = meta["capabilities"] as? [String] ?? []
-        let unsupported = capabilities.filter { !ConformanceRunner.supportedCapabilities.contains($0) }
-        if let first = unsupported.first {
-            return finish(id: id, status: "SKIP", skippedReason: "unsupported capability: \(first)", recorder: HostRecorder(), fixtureDir: fixtureDir)
-        }
+        return capabilities.first { !supportedCapabilities.contains($0) }
+    }
 
+    /// The full engine+registry boot of the conformance loop.
+    struct Booted {
+        let engine: JsContextEngine
+        let runtime: JsWidgetRuntime
+        let registry: ChannelRegistry
+        let timers: ManualTimerDriver
+        let recorder: HostRecorder
+    }
+
+    static func boot(files: FixtureFiles) -> Booted {
         let driverImpl = ManualTimerDriver()
         let engine = JsContextEngine()
         let runtime = JsWidgetRuntime(engine: engine)
@@ -147,35 +161,51 @@ public final class ConformanceRunner {
             registryRef?.drain()
         })
         let services = HostServices(
-            http: MockHttp(mock: meta["mock"] as? [String: Any] ?? [:]),
-            assets: FileAssetLoader(rootPath: fixtureDir))
+            http: MockHttp(mock: files.meta["mock"] as? [String: Any] ?? [:]),
+            assets: FileAssetLoader(rootPath: files.dir))
         let registry = ChannelRegistry(services: services, timers: timers, configuration: JSRConfiguration()) { script in
             try? engine.eval(script, sourceName: "<resolve>")
         }
         registryRef = registry
-        let recorder = registry.recorder
+        return Booted(engine: engine, runtime: runtime, registry: registry,
+                      timers: driverImpl, recorder: registry.recorder)
+    }
+
+    /// Runs one fixture; returns the result dict it wrote (or would write).
+    @discardableResult
+    public func run(fixture id: String, driverFactory: (JsWidgetRuntime, HostRecorder, ChannelRegistry, JsEngine) -> InteractionDriver = { runtime, recorder, registry, engine in
+        TreeInteractionDriver(runtime: runtime, recorder: recorder, registry: registry, engine: engine)
+    }) throws -> [String: Any] {
+        let files = try ConformanceRunner.loadFixture(fixturesDir: fixturesDir, id: id)
+        if let unsupported = ConformanceRunner.unsupportedCapability(in: files.meta) {
+            return finish(id: id, status: "SKIP", skippedReason: "unsupported capability: \(unsupported)",
+                          recorder: HostRecorder(), fixtureDir: files.dir)
+        }
+        let booted = ConformanceRunner.boot(files: files)
         // the view driver mounts BEFORE the widget evaluates so its mapper
         // observes the initial render through renderObserver
-        let interaction = try driverFactory(runtime, recorder, registry, engine)
+        let interaction = driverFactory(booted.runtime, booted.recorder, booted.registry, booted.engine)
 
         do {
-            try runtime.start(sink: { [weak self] channel, payload in
-                registry.dispatch(channel: channel, payload: payload)
+            try booted.runtime.start(sink: { [weak self] channel, payload in
+                booted.registry.dispatch(channel: channel, payload: payload)
                 if channel == "__jsr_render" {
                     self?.renderObserver?(payload)
                 }
             }, iid: iid)
-            try engine.eval(widget, sourceName: "widget.js")
-            registry.drain()
+            try booted.engine.eval(files.widget, sourceName: "widget.js")
+            booted.registry.drain()
 
-            let actions = expected["actions"] as? [[String: Any]] ?? []
+            let actions = files.expected["actions"] as? [[String: Any]] ?? []
             for action in actions {
                 apply(action, to: interaction)
             }
         } catch {
-            return finish(id: id, status: "DONE", error: "\(error)", recorder: recorder, fixtureDir: fixtureDir, viewDriver: interaction)
+            return finish(id: id, status: "DONE", error: "\(error)", recorder: booted.recorder,
+                          fixtureDir: files.dir, viewDriver: interaction)
         }
-        return finish(id: id, status: "DONE", recorder: recorder, fixtureDir: fixtureDir, viewDriver: interaction)
+        return finish(id: id, status: "DONE", recorder: booted.recorder,
+                      fixtureDir: files.dir, viewDriver: interaction)
     }
 
     /// Runs every fixture directory under `fixturesDir`.
@@ -197,37 +227,63 @@ public final class ConformanceRunner {
     // MARK: - plumbing
 
     private func apply(_ action: [String: Any], to driver: InteractionDriver) {
-        if let tap = action["tap"] as? String {
-            _ = driver.tap(target: tap)
-        } else if let input = action["input"] as? [String: Any] {
-            _ = driver.input(node: input["node"] as? String ?? "", value: input["value"] as? String ?? "")
-        } else if let submit = action["submit"] as? String {
-            _ = driver.submit(node: submit)
-        } else if let scroll = action["scroll"] as? [Any], scroll.count == 2 {
-            driver.scroll(dx: scroll[0] as? Double ?? (scroll[0] as? NSNumber)?.doubleValue ?? 0,
-                          dy: scroll[1] as? Double ?? (scroll[1] as? NSNumber)?.doubleValue ?? 0)
-        } else if let swipe = action["swipe"] as? [Any], swipe.count == 5 {
-            let numbers = swipe.map { ($0 as? NSNumber)?.doubleValue ?? 0 }
-            driver.swipe(x1: numbers[0], y1: numbers[1], x2: numbers[2], y2: numbers[3], ms: numbers[4])
-        } else if let waitMs = (action["wait"] as? NSNumber)?.doubleValue {
-            driver.wait(ms: waitMs)
-        } else if let back = action["back"] as? Bool, back {
+        if applyTap(action, to: driver) { return }
+        if applyInput(action, to: driver) { return }
+        if applySubmit(action, to: driver) { return }
+        if applyScroll(action, to: driver) { return }
+        if applySwipe(action, to: driver) { return }
+        if applyWait(action, to: driver) { return }
+        applyBack(action, to: driver)
+    }
+
+    private func applyTap(_ action: [String: Any], to driver: InteractionDriver) -> Bool {
+        guard let tap = action["tap"] as? String else { return false }
+        _ = driver.tap(target: tap)
+        return true
+    }
+
+    private func applyInput(_ action: [String: Any], to driver: InteractionDriver) -> Bool {
+        guard let input = action["input"] as? [String: Any] else { return false }
+        _ = driver.input(node: input["node"] as? String ?? "", value: input["value"] as? String ?? "")
+        return true
+    }
+
+    private func applySubmit(_ action: [String: Any], to driver: InteractionDriver) -> Bool {
+        guard let submit = action["submit"] as? String else { return false }
+        _ = driver.submit(node: submit)
+        return true
+    }
+
+    private func applyScroll(_ action: [String: Any], to driver: InteractionDriver) -> Bool {
+        guard let scroll = action["scroll"] as? [Any], scroll.count == 2 else { return false }
+        let numbers = scroll.map { ($0 as? NSNumber)?.doubleValue ?? 0 }
+        driver.scroll(dx: numbers[0], dy: numbers[1])
+        return true
+    }
+
+    private func applySwipe(_ action: [String: Any], to driver: InteractionDriver) -> Bool {
+        guard let swipe = action["swipe"] as? [Any], swipe.count == 5 else { return false }
+        let numbers = swipe.map { ($0 as? NSNumber)?.doubleValue ?? 0 }
+        driver.swipe(x1: numbers[0], y1: numbers[1], x2: numbers[2], y2: numbers[3], ms: numbers[4])
+        return true
+    }
+
+    private func applyWait(_ action: [String: Any], to driver: InteractionDriver) -> Bool {
+        guard let waitMs = (action["wait"] as? NSNumber)?.doubleValue else { return false }
+        driver.wait(ms: waitMs)
+        return true
+    }
+
+    private func applyBack(_ action: [String: Any], to driver: InteractionDriver) {
+        if let back = action["back"] as? Bool, back {
             driver.back()
         }
     }
 
     /// result.json per plan 1.4: PASS is set by the harness; the runner writes DONE/SKIP.
     private func finish(id: String, status: String, error: String? = nil, skippedReason: String? = nil, recorder: HostRecorder, fixtureDir: String, viewDriver: InteractionDriver? = nil) -> [String: Any] {
-        var dump: Any = NSNull()
-        var finalDump: Any = NSNull()
-        if let first = recorder.renders.first, let tree = try? AuiDump.normalizeTree(payloadJSON: first) {
-            dump = tree.jsonObject
-        }
-        if let custom = customFinalDump, let viewDriver, let live = custom(viewDriver) {
-            finalDump = live // view-backed dump: text-bearing props read live from the view
-        } else if let last = recorder.renders.last, let tree = try? AuiDump.normalizeTree(payloadJSON: last) {
-            finalDump = tree.jsonObject
-        }
+        let dump = ConformanceRunner.initialDump(of: recorder)
+        let finalDump = ConformanceRunner.finalDump(of: recorder, viewDriver: viewDriver, custom: customFinalDump)
         let result: [String: Any] = [
             "fixture": id,
             "platform": "macos",
@@ -249,6 +305,25 @@ public final class ConformanceRunner {
             try? data.write(to: URL(fileURLWithPath: outDir + "/" + id + ".result.json"))
         }
         return result
+    }
+
+    /// The FIRST render, normalized (initial dump).
+    private static func initialDump(of recorder: HostRecorder) -> Any {
+        guard let first = recorder.renders.first, let tree = try? AuiDump.normalizeTree(payloadJSON: first) else {
+            return NSNull()
+        }
+        return tree.jsonObject
+    }
+
+    /// Live view dump when a driver provides one, else the LAST render normalized.
+    private static func finalDump(of recorder: HostRecorder, viewDriver: InteractionDriver?, custom: ((_ interaction: InteractionDriver) -> [String: Any]?)?) -> Any {
+        if let custom, let viewDriver, let live = custom(viewDriver) {
+            return live // view-backed dump: text-bearing props read live from the view
+        }
+        guard let last = recorder.renders.last, let tree = try? AuiDump.normalizeTree(payloadJSON: last) else {
+            return NSNull()
+        }
+        return tree.jsonObject
     }
 
     /// `--filter <glob>`: `*` wildcards, otherwise exact id match.

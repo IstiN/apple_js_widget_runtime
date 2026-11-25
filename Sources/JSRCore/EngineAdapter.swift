@@ -57,6 +57,11 @@ public final class JsContextEngine: JsEngine {
         let value = context.evaluateScript(code)
         context.exceptionHandler = nil
         if let caught { return ["__exception": caught] }
+        return convert(value)
+    }
+
+    /// JSValue → native: dict / array / number / string / bool / nil.
+    private func convert(_ value: JSValue?) -> Any? {
         guard let value, !value.isUndefined, !value.isNull else { return nil }
         if let object = value.toObject() as? [String: Any] { return object }
         if let array = value.toObject() as? [Any] { return array }

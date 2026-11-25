@@ -92,6 +92,22 @@ import Foundation
         #expect((svg.props["data"] as? String) == "<svg/>") // markup -> data
     }
 
+    @Test func imageSourceAliasesMoveUriAndSourceToUrl() throws {
+        let tree = try AuiDump.normalizeTree(payloadJSON: """
+        {"type":"image","uri":"http://x/1.png","items":[
+          {"type":"img","source":"http://x/2.png"},
+          {"type":"networkImage","url":"http://x/3.png"}]}
+        """)
+        #expect(tree.type == "image")
+        #expect((tree.props["url"] as? String) == "http://x/1.png")
+        #expect(tree.props["uri"] == nil)
+        let second = tree.children[0]
+        #expect(second.type == "image")
+        #expect((second.props["url"] as? String) == "http://x/2.png")
+        let third = tree.children[1]
+        #expect((third.props["url"] as? String) == "http://x/3.png") // url kept, no alias applied
+    }
+
     @Test func routingTagStripsAsStructuralAndIidStaysAProp() throws {
         // The canonical __tag merges `iid` into object payloads; normalize strips
         // `__iid` (structural) and keeps `iid` as a root prop — identical to the

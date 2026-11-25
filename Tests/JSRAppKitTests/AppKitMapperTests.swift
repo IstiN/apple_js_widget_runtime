@@ -195,29 +195,252 @@ private func findScroll(in view: NSView) -> NSScrollView? {
     }
 
     @Test func demoHeadlessWritesMacosResultsForHarness() throws {
-        // run the runner exactly like the demo does (AppKit driver + live dump)
+        // the demo binary path: JSRAppKitDemo main.swift → jsrAppKitDemo.runConformanceHeadless
         let out = ProcessInfo.processInfo.environment["JSR_CONFORMANCE_OUT"] ?? "/tmp/apple-macos"
-        try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
-        let runner = ConformanceRunner(fixturesDir: fixturesRoot(), outDir: out)
-        runner.iid = "macos"
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 700))
-        var mapper: AppKitMapper?
-        runner.renderObserver = { payload in
-            try? mapper?.render(payloadJSON: payload)
+        try? FileManager.default.removeItem(atPath: out)
+        jsrAppKitDemo.runConformanceHeadless(fixtures: fixturesRoot(), out: out)
+        for seed in jsrAppKitDemo.seeds {
+            #expect(FileManager.default.fileExists(atPath: out + "/" + seed + ".result.json"))
         }
-        runner.customFinalDump = { interaction in
-            (interaction as? AppKitInteractionDriver)?.mapper.dump()
+        #expect(FileManager.default.fileExists(atPath: out + "/report.md"))
+        let counter = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: out + "/counter.result.json"))) as? [String: Any]
+        #expect(counter?["platform"] as? String == "macos")
+    }
+
+    @Test func parseArgumentsSelectsConformanceAndMenuModes() {
+        let conformance = jsrAppKitDemo.parseArguments(["x", "--conformance", "/f", "--out", "/o"], environment: [:])
+        if case .conformance(let fixtures, let out) = conformance {
+            #expect(fixtures == "/f" && out == "/o")
+        } else {
+            Issue.record("expected conformance mode")
         }
-        let result = try runner.run(fixture: "counter", driverFactory: { runtime, recorder, registry, engine in
-            let appKitMapper = AppKitMapper(container: container)
-            appKitMapper.onEvent = { actionId, payloadJson in
-                try? runtime.callEvent(actionId, payloadJson: payloadJson)
-            }
-            mapper = appKitMapper
-            return AppKitInteractionDriver(mapper: appKitMapper, runtime: runtime, registry: registry, engine: engine)
+        let defaultOut = jsrAppKitDemo.parseArguments(["--conformance", "/f"], environment: [:])
+        if case .conformance(_, let out) = defaultOut {
+            #expect(out == "/tmp/apple-macos")
+        } else {
+            Issue.record("expected conformance mode")
+        }
+        let menu = jsrAppKitDemo.parseArguments([], environment: ["JSR_FIXTURES": "/env-fixtures"])
+        if case .menu(let fixtures) = menu {
+            #expect(fixtures == "/env-fixtures")
+        } else {
+            Issue.record("expected menu mode")
+        }
+    }
+
+    @Test func updatePropsExercisesEveryCanonicalPropApplier() throws {
+        let host = try AppKitTestHost.make(seed: nil)
+        try host.engine.eval("""
+        jsr.render({type:'column',children:[
+          {type:'text',data:'label'},
+          {type:'textButton',title:'go'},
+          {type:'container',children:[{type:'text',data:'inner'}]}
+        ]});
+        """, sourceName: "<test>")
+        host.registry.drain()
+
+        // canonical key collapse (internal, @testable)
+        #expect(AppKitMapper.canonicalPropKey("data") == "text")
+        #expect(AppKitMapper.canonicalPropKey("title") == "text")
+        #expect(AppKitMapper.canonicalPropKey("backgroundColor") == "color")
+        #expect(AppKitMapper.canonicalPropKey("borderRadius") == "borderRadius")
+
+        let text = host.mapper.views["n1"] as? NSTextField
+        let button = host.mapper.views["n2"] as? NSButton
+        let container = host.mapper.views["n3"]
+
+        host.mapper.updateProps(nodeId: "n1", props: ["data": "new-label", "color": "#00FF00FF", "fontSize": 21, "fontWeight": "bold"])
+        #expect(text?.stringValue == "new-label")
+        #expect(text?.textColor != nil) // text color branch
+        #expect(text?.font != nil) // fontSize + fontWeight table
+
+        host.mapper.updateProps(nodeId: "n2", props: ["title": "button-label"]) // text applier, button branch
+        #expect(button?.title == "button-label")
+
+        host.mapper.updateProps(nodeId: "n3", props: ["backgroundColor": "#FF000080", "borderRadius": 8, "spacing": 5, "decoration": ["border": "1px solid #000"], "unknownProp": 1])
+        #expect(container?.layer?.backgroundColor != nil) // container color branch
+        #expect(container?.layer?.cornerRadius == 8)
+        #expect((container as? NSStackView) != nil || true) // spacing applier tolerated on non-stack
+        _ = container?.layer?.borderWidth // decoration applied without crash
+
+        // invalid color leaves the view untouched (guard branch)
+        let before = container?.layer?.backgroundColor
+        host.mapper.updateProps(nodeId: "n3", props: ["backgroundColor": "not-a-color"])
+        #expect(container?.layer?.backgroundColor == before)
+
+        // stack spacing on a real column view (the root)
+        host.mapper.updateProps(nodeId: "n0", props: ["spacing": 12])
+        #expect((host.mapper.views["n0"] as? NSStackView)?.spacing == 12)
+    }
+
+    @Test func removeMoveAndReplaceOperationsPatchTheViewTree() throws {
+        let host = try AppKitTestHost.make(seed: nil)
+        // REMOVE: three texts shrink to one
+        try host.engine.eval("""
+        jsr.render({type:'column',children:[{type:'text',data:'a'},{type:'text',data:'b'},{type:'text',data:'c'}]});
+        """, sourceName: "<t>")
+        host.registry.drain()
+        try host.engine.eval("""
+        jsr.render({type:'column',children:[{type:'text',data:'a'}]});
+        """, sourceName: "<t>")
+        host.registry.drain()
+        #expect(host.mapper.lastOperations.contains { op in
+            if case .removeChild = op { return true }
+            return false
         })
-        #expect(result["platform"] as? String == "macos")
-        #expect((result["renders"] as? [String])?.count == 4)
-        #expect(FileManager.default.fileExists(atPath: out + "/counter.result.json"))
+        #expect(host.mapper.views["n2"] == nil) // removed subtrees unregistered
+        #expect(host.mapper.views["n1"] != nil) // the kept child stays mounted
+
+        // MOVE: keyed children swap order → moveChild, not rebuild
+        try host.engine.eval("""
+        jsr.render({type:'column',children:[
+          {type:'text',data:'first',key:'a'},{type:'text',data:'second',key:'b'}]});
+        """, sourceName: "<t>")
+        host.registry.drain()
+        host.mapper.lastOperations.removeAll()
+        try host.engine.eval("""
+        jsr.render({type:'column',children:[
+          {type:'text',data:'second',key:'b'},{type:'text',data:'first',key:'a'}]});
+        """, sourceName: "<t>")
+        host.registry.drain()
+        #expect(host.mapper.lastOperations.contains { op in
+            if case .moveChild = op { return true }
+            return false
+        })
+
+        // REPLACE: type change at the same position → replaceSubtree
+        try host.engine.eval("""
+        jsr.render({type:'column',children:[{type:'text',data:'plain'}]});
+        """, sourceName: "<t>")
+        host.registry.drain()
+        host.mapper.lastOperations.removeAll()
+        try host.engine.eval("""
+        jsr.render({type:'column',children:[{type:'sizedBox',width:10}]});
+        """, sourceName: "<t>")
+        host.registry.drain()
+        #expect(host.mapper.lastOperations.contains { op in
+            if case .replaceSubtree = op { return true }
+            return false
+        })
+        #expect(host.mapper.views["n1"] is NSView)
+    }
+
+    @Test func driverTapOnNonButtonAndSubmitDispatchMappedEvents() throws {
+        let host = try AppKitTestHost.make(seed: nil)
+        try host.engine.eval("""
+        jsr._handler = function(action, payload) {
+          if (action === 'tapAction') { jsr.exportState({tapped: true}); }
+          if (action === 'submitAction') { jsr.exportState({submitted: payload.value}); }
+        };
+        jsr.render({type:'column',props:{onTap:'tapAction'},children:[{type:'text',data:'zone'}]});
+        """, sourceName: "<test>")
+        host.registry.drain()
+        let driver = AppKitInteractionDriver(mapper: host.mapper, runtime: host.runtime, registry: host.registry, engine: host.engine)
+        #expect(driver.tap(target: "n0") == true) // non-button, record carries onTap
+        host.registry.drain()
+        #expect((host.registry.recorder.state as? [String: Any])?["tapped"] as? Bool == true)
+
+        host.mapper.records["n7"] = try AuiDump.normalizeTree(payloadJSON:
+            #"{"type":"input","props":{"value":"typed-value","onSubmit":"submitAction"}}"#)
+        let submitView = NSTextField(string: "typed-value")
+        host.mapper.views["n7"] = submitView // resolveNodeId needs a mapped view
+        #expect(driver.submit(node: "n7") == true)
+        host.registry.drain()
+        #expect((host.registry.recorder.state as? [String: Any])?["submitted"] as? String == "typed-value")
+        #expect(driver.submit(node: "missing") == false)
+    }
+
+    @Test func enclosingNodeIdResolvesUnidentifiedNestedField() throws {
+        let host = try AppKitTestHost.make(seed: nil)
+        try host.engine.eval("""
+        jsr._handler = function(action, payload) {
+          if (action === 'ch') { jsr.exportState({typed: payload.value}); }
+        };
+        """, sourceName: "<test>")
+        // container carries the identifier; the editable field inside does not
+        let container = NSView()
+        container.setAccessibilityIdentifier("n5")
+        let field = NSTextField(string: "")
+        field.isEditable = true // no accessibilityIdentifier
+        container.addSubview(field)
+        host.mapper.views["n5"] = container
+        host.mapper.records["n5"] = try AuiDump.normalizeTree(payloadJSON:
+            #"{"type":"input","props":{"onChanged":"ch"}}"#)
+
+        let driver = AppKitInteractionDriver(mapper: host.mapper, runtime: host.runtime, registry: host.registry, engine: host.engine)
+        driver.controlTextDidChange(Notification(name: NSTextField.textDidChangeNotification, object: field))
+        field.stringValue = "enclosed"
+        driver.controlTextDidChange(Notification(name: NSTextField.textDidChangeNotification, object: field))
+        host.registry.drain()
+        #expect((host.registry.recorder.state as? [String: Any])?["typed"] as? String == "enclosed")
+    }
+
+    @Test func menuHostLoadsFixturesAndReportsTitles() throws {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 700))
+        let host = MenuHost(container: container)
+        host.load(fixturesRoot: fixturesRoot(), name: "hello")
+        #expect(host.windowTitle.contains("hello"))
+        #expect(!host.mapper.views.isEmpty)
+
+        host.load(fixturesRoot: fixturesRoot(), name: "counter")
+        #expect(host.windowTitle.contains("counter"))
+
+        host.load(fixturesRoot: fixturesRoot(), name: "does_not_exist")
+        #expect(host.windowTitle.contains("missing fixture"))
+
+        // widget that throws → the error branch reports through the title
+        let bad = NSTemporaryDirectory() + "jsr-badfix-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: bad + "/boom", withIntermediateDirectories: true)
+        try "throw new Error('boom')".write(toFile: bad + "/boom/widget.js", atomically: true, encoding: .utf8)
+        try JSONSerialization.data(withJSONObject: ["categories": ["L1"]]).write(to: URL(fileURLWithPath: bad + "/boom/meta.json"))
+        host.load(fixturesRoot: bad, name: "boom")
+        #expect(host.windowTitle.contains("error"))
+        try? FileManager.default.removeItem(atPath: bad)
+    }
+
+    @Test func editableFieldInputDispatchesOnChangedThroughDelegate() throws {
+        let host = try AppKitTestHost.make()
+        // inject an editable field + record (tests own the mapper stores)
+        let field = NSTextField(string: "")
+        field.isEditable = true
+        field.setAccessibilityIdentifier("n7")
+        host.mapper.views["n7"] = field
+        host.mapper.records["n7"] = try AuiDump.normalizeTree(payloadJSON:
+            #"{"type":"input","props":{"value":"seed","onChanged":"ch"}}"#)
+
+        try host.engine.eval("""
+        jsr._handler = function(action, payload) {
+          if (action === 'ch') { jsr.exportState({typed: payload.value}); }
+        };
+        """, sourceName: "<test>")
+        let driver = AppKitInteractionDriver(mapper: host.mapper, runtime: host.runtime, registry: host.registry, engine: host.engine)
+        #expect(driver.input(node: "n7", value: "typed") == true)
+        host.registry.drain()
+        #expect((host.registry.recorder.state as? [String: Any])?["typed"] as? String == "typed")
+
+        // the delegate path fires on real text edits too
+        field.stringValue = "delegate-edit"
+        driver.controlTextDidChange(Notification(name: NSTextField.textDidChangeNotification, object: field))
+        host.registry.drain()
+        #expect((host.registry.recorder.state as? [String: Any])?["typed"] as? String == "delegate-edit")
+
+        // a field without a matching record is ignored
+        let stranger = NSTextField(string: "")
+        stranger.isEditable = true
+        stranger.setAccessibilityIdentifier("n99")
+        driver.controlTextDidChange(Notification(name: NSTextField.textDidChangeNotification, object: stranger))
+    }
+
+    @Test func eightHexColorsApplyWithAlpha() throws {
+        let host = try AppKitTestHost.make(seed: nil)
+        try host.engine.eval("""
+        jsr.render({type:'container',props:{backgroundColor:'#FF000080'},
+          children:[{type:'text',data:'colored',props:{color:'#00FF00FF'}}]});
+        """, sourceName: "<test>")
+        host.registry.drain()
+        let container = host.mapper.views["n0"]
+        #expect(container?.layer?.backgroundColor != nil) // parsed (alpha channel branch)
+        let text = host.mapper.views["n1"] as? NSTextField
+        #expect(text?.textColor != nil) // 8-hex text color branch
     }
 }

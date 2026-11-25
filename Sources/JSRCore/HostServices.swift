@@ -167,16 +167,24 @@ public final class KeychainSecrets: SecretsService {
 
     public func set(_ key: String, _ value: Any?) -> Bool {
         guard let value else { return delete(key: key) }
-        let data = Data(JSON.stringify(value).utf8)
+        return upsert(key: key, data: Data(JSON.stringify(value).utf8))
+    }
+
+    /// Update first; add when the item does not exist yet.
+    private func upsert(key: String, data: Data) -> Bool {
         var update = [String: Any]()
         update[kSecValueData as String] = data
         let status = SecItemUpdate(baseQuery(key: key) as CFDictionary, update as CFDictionary)
         if status == errSecItemNotFound {
-            var add = baseQuery(key: key)
-            add[kSecValueData as String] = data
-            return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
+            return add(key: key, data: data)
         }
         return status == errSecSuccess
+    }
+
+    private func add(key: String, data: Data) -> Bool {
+        var query = baseQuery(key: key)
+        query[kSecValueData as String] = data
+        return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
     }
 
     private func delete(key: String) -> Bool {
@@ -193,7 +201,7 @@ public final class KeychainSecrets: SecretsService {
     }
 }
 
-/// URLSession-backed fetch; the mock map is not used by this backend.
+/// URLSession-backed fetch; response shaping mirrors the harness contract.
 public final class URLSessionHttp: HttpService {
     private let session: URLSession
     public init(session: URLSession = .shared) {
@@ -205,22 +213,30 @@ public final class URLSessionHttp: HttpService {
             completion(["__error": "invalid url: \(request.url)"])
             return
         }
+        let task = session.dataTask(with: urlRequest(request, url: url)) { data, response, _ in
+            completion(URLSessionHttp.shape(status: (response as? HTTPURLResponse)?.statusCode ?? 0, data: data))
+        }
+        task.resume()
+    }
+
+    private func urlRequest(_ request: FetchRequest, url: URL) -> URLRequest {
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method.uppercased()
         for (key, value) in request.headers {
             if let string = value as? String { urlRequest.setValue(string, forHTTPHeaderField: key) }
         }
-        session.dataTask(with: urlRequest) { data, response, _ in
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            if status >= 400 {
-                completion(["__error": "HTTP \(status)"])
-            } else if let data,
-                      let value = JSON.parse(String(decoding: data, as: UTF8.self)) {
-                completion(value)
-            } else {
-                completion([String: Any]())
-            }
-        }.resume()
+        return urlRequest
+    }
+
+    /// status >= 400 → {"__error": "HTTP <status>"}; else parsed JSON body or {}.
+    static func shape(status: Int, data: Data?) -> Any {
+        if status >= 400 {
+            return ["__error": "HTTP \(status)"]
+        }
+        if let data, let value = JSON.parse(String(decoding: data, as: UTF8.self)) {
+            return value
+        }
+        return [String: Any]()
     }
 }
 

@@ -9,13 +9,18 @@ public struct WidgetNode {
     public private(set) var children: [WidgetNode]
     /// Stable id assigned in depth-first render order ("n0..nN") — feeds AUI dump nodeId.
     public let nodeId: String
+    /// Reconciler identity hint (universal `key` prop). Normalization strips
+    /// `key` from props (never dumped), so it lives here; raw-parse trees keep
+    /// it in props and Reconciler falls back to that.
+    public let identityKey: String?
 
-    public init(type: String, props: [String: Any], events: [String: String] = [:], children: [WidgetNode], nodeId: String) {
+    public init(type: String, props: [String: Any], events: [String: String] = [:], children: [WidgetNode], nodeId: String, identityKey: String? = nil) {
         self.type = type
         self.props = props
         self.events = events
         self.children = children
         self.nodeId = nodeId
+        self.identityKey = identityKey
     }
 
     /// Parses the raw __jsr_render payload JSON into a tree (no normalization).
@@ -50,15 +55,15 @@ public struct WidgetNode {
     }
 
     public func withChildren(_ children: [WidgetNode]) -> WidgetNode {
-        WidgetNode(type: type, props: props, events: events, children: children, nodeId: nodeId)
+        WidgetNode(type: type, props: props, events: events, children: children, nodeId: nodeId, identityKey: identityKey)
     }
 
     public func withNodeId(_ nodeId: String) -> WidgetNode {
-        WidgetNode(type: type, props: props, events: events, children: children, nodeId: nodeId)
+        WidgetNode(type: type, props: props, events: events, children: children, nodeId: nodeId, identityKey: identityKey)
     }
 
     public func withProps(_ props: [String: Any]) -> WidgetNode {
-        WidgetNode(type: type, props: props, events: events, children: children, nodeId: nodeId)
+        WidgetNode(type: type, props: props, events: events, children: children, nodeId: nodeId, identityKey: identityKey)
     }
 
     /// Dump/patch shape: {type, props, events, children, nodeId}.

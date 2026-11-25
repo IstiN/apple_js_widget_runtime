@@ -38,6 +38,20 @@ public enum JSON {
 
     /// Deep equality over the JSON object graph (bools are not numbers).
     public static func valuesEqual(_ a: Any, _ b: Any) -> Bool {
+        if equalScalars(a, b) { return true }
+        if let x = a as? [Any], let y = b as? [Any] {
+            return x.count == y.count && zip(x, y).allSatisfy { valuesEqual($0, $1) }
+        }
+        if let x = a as? [String: Any], let y = b as? [String: Any] {
+            return x.count == y.count && x.allSatisfy { key, value in
+                y[key] != nil && valuesEqual(value, y[key]!)
+            }
+        }
+        return false
+    }
+
+    /// String/bool/number leaves; NSNull pairs; bool never equals a number.
+    private static func equalScalars(_ a: Any, _ b: Any) -> Bool {
         switch (a, b) {
         case let (x as String, y as String):
             return x == y
@@ -45,12 +59,6 @@ public enum JSON {
             return x == y
         case let (x as NSNumber, y as NSNumber):
             return !isBool(x) && !isBool(y) && x == y
-        case let (x as [Any], y as [Any]):
-            return x.count == y.count && zip(x, y).allSatisfy { valuesEqual($0, $1) }
-        case let (x as [String: Any], y as [String: Any]):
-            return x.count == y.count && x.allSatisfy { key, value in
-                y[key] != nil && valuesEqual(value, y[key]!)
-            }
         case (is NSNull, is NSNull):
             return true
         default:

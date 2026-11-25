@@ -53,35 +53,46 @@ public enum AuiDump {
     public static func normalizeColor(_ value: Any) -> Any {
         guard let string = value as? String else { return value }
         let trimmed = string.trimmingCharacters(in: .whitespaces)
-        if trimmed.hasPrefix("#"), trimmed.count >= 4 {
-            let hex = String(trimmed.dropFirst())
-            if hex.allSatisfy({ $0.isHexDigit }) {
-                if hex.count == 3 || hex.count == 4 {
-                    let doubled = hex.map { "\($0)\($0)" }.joined().uppercased()
-                    return "#\(doubled)"
-                }
-                if hex.count == 6 || hex.count == 8 {
-                    return "#\(hex.uppercased())"
-                }
-            }
-            return value
+        if trimmed.hasPrefix("#") {
+            return normalizeHexColor(trimmed) ?? value
         }
         if trimmed.lowercased().hasPrefix("rgb"), trimmed.hasSuffix(")"), trimmed.contains("(") {
-            let inner = String(trimmed[(trimmed.range(of: "(")?.upperBound ?? trimmed.startIndex)..<trimmed.index(before: trimmed.endIndex)])
-            let parts = inner.split(whereSeparator: { " ,+/".contains($0) })
-            let nums = parts.compactMap { Double($0) }
-            guard nums.count == 3 || nums.count == 4 else { return value }
-            func byte(_ n: Double) -> Int { max(0, min(255, Int(n.rounded()))) }
-            let rgb = nums.prefix(3).map { byte($0) }
-            var out = "#" + rgb.map { String(format: "%02X", $0) }.joined()
-            if nums.count == 4 {
-                var alpha = nums[3]
-                if alpha > 1 { alpha /= 255.0 } // alpha > 1 read as 0-255 scale
-                out += String(format: "%02X", byte((alpha * 255.0).rounded()))
-            }
-            return out
+            return normalizeRgbColor(trimmed) ?? value
         }
         return value
+    }
+
+    /// `#RGB`/`#RGBA` double each digit; `#RRGGBB(BB)` upper-case; else nil.
+    static func normalizeHexColor(_ trimmed: String) -> String? {
+        guard trimmed.count >= 4 else { return nil }
+        let hex = String(trimmed.dropFirst())
+        guard hex.allSatisfy({ $0.isHexDigit }) else { return nil }
+        if hex.count == 3 || hex.count == 4 {
+            return "#" + hex.map { "\($0)\($0)" }.joined().uppercased()
+        }
+        if hex.count == 6 || hex.count == 8 {
+            return "#\(hex.uppercased())"
+        }
+        return nil
+    }
+
+    /// `rgb(r, g, b)` / `rgba(r, g, b, a)` → `#RRGGBB(AA)`; nil when malformed.
+    static func normalizeRgbColor(_ trimmed: String) -> String? {
+        guard let open = trimmed.range(of: "(")?.upperBound, trimmed.hasSuffix(")") else { return nil }
+        let inner = String(trimmed[open..<trimmed.index(before: trimmed.endIndex)])
+        let nums = inner.split(whereSeparator: { " ,+/".contains($0) }).compactMap { Double($0) }
+        guard nums.count == 3 || nums.count == 4 else { return nil }
+        var out = "#" + nums.prefix(3).map { hexByte($0) }.joined()
+        if nums.count == 4 {
+            var alpha = nums[3]
+            if alpha > 1 { alpha /= 255.0 } // alpha > 1 read as 0-255 scale
+            out += hexByte((alpha * 255.0).rounded())
+        }
+        return out
+    }
+
+    private static func hexByte(_ n: Double) -> String {
+        String(format: "%02X", max(0, min(255, Int(n.rounded()))))
     }
 
     /// Normalizes a raw `__jsr_render` payload string (rule 7: nodeIds assigned).
@@ -104,7 +115,20 @@ public enum AuiDump {
         guard let dict = node as? [String: Any] else { throw AuiDumpError.notANodeObject }
         guard let rawType = dict["type"] as? String else { throw AuiDumpError.missingStringType }
 
-        // working map: normalized props first, then top-level keys (node keys win)
+        var working = workingMap(of: dict)
+        working["type"] = resolveTypeAlias(rawType)
+        applyFieldAliases(&working)
+
+        var props: [String: Any] = [:]
+        var events: [String: String] = extractEvents(working)
+        mergePropsAndStyle(working, dict, into: &props, events: &events)
+        let identityKey = working["key"] as? String // rule 4: consumed, never dumped
+        return WidgetNode(type: working["type"] as? String ?? rawType, props: props, events: events,
+                          children: rawChildren(working).map(toChild), nodeId: "", identityKey: identityKey)
+    }
+
+    /// working map: normalized props first, then top-level keys (node keys win).
+    private static func workingMap(of dict: [String: Any]) -> [String: Any] {
         var working: [String: Any] = [:]
         if let props = dict["props"] as? [String: Any] {
             for (key, value) in props { working[key] = value }
@@ -112,14 +136,21 @@ public enum AuiDump {
         for (key, value) in dict where key != "props" && working[key] == nil {
             working[key] = value
         }
-        working["type"] = resolveTypeAlias(rawType)
-        applyFieldAliases(&working)
+        return working
+    }
 
-        var props: [String: Any] = [:]
+    /// rule 2: `on*` string props move to events.
+    private static func extractEvents(_ working: [String: Any]) -> [String: String] {
+        guard let existing = working["events"] as? [String: Any] else { return [:] }
         var events: [String: String] = [:]
-        if let existingEvents = working["events"] as? [String: Any] {
-            for (key, value) in existingEvents where value is String { events[key] = value as? String }
+        for (key, value) in existing where value is String {
+            events[key] = value as? String
         }
+        return events
+    }
+
+    /// Props loop (rule 6 normalization) + rule 1 style merge (node keys win).
+    private static func mergePropsAndStyle(_ working: [String: Any], _ dict: [String: Any], into props: inout [String: Any], events: inout [String: String]) {
         for (key, value) in working {
             if structuralKeys.contains(key) || key == "events" { continue }
             if key.range(of: "^on[A-Z]", options: .regularExpression) != nil, value is String {
@@ -133,8 +164,6 @@ public enum AuiDump {
                 props[key] = normalizePropValue(key, value)
             }
         }
-        return WidgetNode(type: working["type"] as? String ?? rawType, props: props, events: events,
-                          children: rawChildren(working).map(toChild), nodeId: "")
     }
 
     static func toChild(_ child: Any) -> WidgetNode {
@@ -151,19 +180,25 @@ public enum AuiDump {
 
     // Reference UiViewTreeNormalizer._aliasFields: an alias applies only when
     // its target prop is absent, so a dump that already carries both props
-    // stays unchanged (idempotent).
+    // stays unchanged (idempotent). Dispatch is a table — one group per type set.
+    private static let aliasGroups: [(types: Set<String>, apply: (inout [String: Any]) -> Void)] = [
+        (boxTypes, { out in aliasBoxDecoration(&out, type: out["type"] as? String ?? "") }),
+        (buttonTypes, { out in aliasButtonLabel(&out) }),
+        (inputTypes, { out in aliasInputFields(&out, type: out["type"] as? String ?? "") }),
+        (imageTypes, { out in aliasImageSource(&out) }),
+        (["svg"], { out in aliasSvgMarkup(&out) }),
+        (valueTypes, { out in aliasOnChanged(&out) }),
+        (["dropdown", "select"], { out in
+            out["type"] = "dropdown"
+            aliasOnChanged(&out)
+        }),
+    ]
+
     static func applyFieldAliases(_ out: inout [String: Any]) {
         aliasTextContent(&out)
         let type = out["type"] as? String ?? ""
-        if boxTypes.contains(type) { aliasBoxDecoration(&out, type: type) }
-        if buttonTypes.contains(type) { aliasButtonLabel(&out) }
-        if inputTypes.contains(type) { aliasInputFields(&out, type: type) }
-        if imageTypes.contains(type) { aliasImageSource(&out) }
-        if type == "svg" { aliasSvgMarkup(&out) }
-        if valueTypes.contains(type) { aliasOnChanged(&out) }
-        if type == "dropdown" || type == "select" {
-            out["type"] = "dropdown"
-            aliasOnChanged(&out)
+        for group in aliasGroups where group.types.contains(type) {
+            group.apply(&out)
         }
     }
 

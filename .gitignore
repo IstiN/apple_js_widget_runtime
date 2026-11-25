@@ -1,4 +1,5 @@
 .build/
 .conformance/
 *.profdata
+coverage.lcov
 .DS_Store

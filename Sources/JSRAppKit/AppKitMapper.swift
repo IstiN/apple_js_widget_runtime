@@ -26,14 +26,16 @@ public final class AppKitMapper: NSObject {
     public var onEvent: ((_ actionId: String, _ payloadJson: String) -> Void)?
 
     /// Applied node records (normalized trees) by nodeId — the dump's prop source.
-    private(set) var records: [String: WidgetNode] = [:]
+    /// Setter internal: tests inject views/records (e.g. editable fields).
+    internal(set) var records: [String: WidgetNode] = [:]
     /// Mapped root views by nodeId.
-    private(set) var views: [String: NSView] = [:]
+    internal(set) var views: [String: NSView] = [:]
     /// parent → ordered child nodeIds (the applied tree order).
     private(set) var childIds: [String: [String]] = [:]
     private(set) var rootId: String?
-    /// Patch operations of the last render (patch-not-rebuild evidence).
-    private(set) var lastOperations: [PatchOperation] = []
+    /// The reconciler operations applied by the last render (patch, not rebuild).
+    /// Setter internal: tests clear between renders.
+    internal(set) var lastOperations: [PatchOperation] = []
 
     public init(container: NSView) {
         self.container = container
@@ -42,21 +44,29 @@ public final class AppKitMapper: NSObject {
         container.translatesAutoresizingMaskIntoConstraints = false
     }
 
+    /// The tree the CURRENT views/records reflect (the last applied render).
+    /// records[rootId] goes stale after patches (its node struct is immutable),
+    /// so reconciliation must diff against this instead.
+    private var lastTree: WidgetNode?
+
     /// Renders a raw `__jsr_render` payload: first render builds, later renders
-    /// reconcile and apply patches.
+    /// reconcile and apply patches. The next reconcile diffs against the
+    /// RETAINED tree (new content, view-carried ids) — records[rootId] would
+    /// be stale and a moved payload tree would desync the id spaces.
     public func render(payloadJSON: String) throws {
         let tree = try AuiDump.normalizeTree(payloadJSON: payloadJSON)
-        let previous = rootId.flatMap { records[$0] }
-        guard let previous else {
+        guard let previous = lastTree else {
             lastOperations = []
             mountRoot(tree)
+            lastTree = tree
             return
         }
-        let operations = Reconciler.reconcile(previous, tree)
-        lastOperations = operations
-        for operation in operations {
+        let mapped = Reconciler.reconcileMapped(previous, tree)
+        lastOperations = mapped.operations
+        for operation in mapped.operations {
             apply(operation)
         }
+        lastTree = mapped.retained
     }
 
     // MARK: - initial mount
@@ -145,7 +155,9 @@ public final class AppKitMapper: NSObject {
         }
     }
 
-    private func updateProps(nodeId: String, props: [String: Any]) {
+    /// Applies a props patch to one node (reconciler updateProps; tests drive
+    /// the patch path directly).
+    func updateProps(nodeId: String, props: [String: Any]) {
         guard let view = views[nodeId], let record = records[nodeId] else { return }
         // only the changed props touch the view: an unchanged text keeps its
         // live content (property keeping)
@@ -184,9 +196,20 @@ public final class AppKitMapper: NSObject {
               let parentRecord = records[parentId] else { return }
         let superview = oldView.superview
         let stackIndex = (superview as? NSStackView)?.arrangedSubviews.firstIndex(where: { $0 === oldView })
+        let originalIndex = childIds[parentId]?.firstIndex(of: nodeId)
         unregisterSubtree(nodeId)
+        // drop the replaced id from the parent's list (removeChild filters too;
+        // without this a later index-based removal hits the wrong child)
+        childIds[parentId]?.removeAll { $0 == nodeId }
         let view = build(node)
         registerSubtree(node, view: view, parentId: parentId)
+        // registerSubtree appends; a REPLACED child keeps its original position
+        if let originalIndex, var siblings = childIds[parentId],
+           siblings.last == node.nodeId, siblings.count > 1 {
+            siblings.removeLast()
+            siblings.insert(node.nodeId, at: min(originalIndex, siblings.count))
+            childIds[parentId] = siblings
+        }
         if let superview {
             if let stack = superview as? NSStackView, let index = stackIndex {
                 stack.insertArrangedSubview(view, at: index)
@@ -219,27 +242,27 @@ public final class AppKitMapper: NSObject {
 
     // MARK: - view construction
 
+    /// Builder table: node type → view constructor; unknown types fall back.
+    private static let builders: [String: (AppKitMapper, WidgetNode) -> NSView] = [
+        "column": { mapper, node in mapper.buildStack(node, horizontal: false) },
+        "row": { mapper, node in mapper.buildStack(node, horizontal: true) },
+        "text": { mapper, node in mapper.buildText(node) },
+        "sizedBox": { mapper, node in mapper.buildSizedBox(node) },
+        "textButton": { mapper, node in mapper.buildTextButton(node) },
+        "scroll": { mapper, _ in mapper.buildScroll() },
+        "container": { mapper, node in mapper.buildContainer(node) },
+        "center": { _, _ in
+            let view = NSView()
+            view.wantsLayer = true
+            return view
+        },
+    ]
+
     private func build(_ node: WidgetNode) -> NSView {
         let view: NSView
-        switch node.type {
-        case "center":
-            view = NSView()
-            view.wantsLayer = true
-        case "column":
-            view = buildStack(node, horizontal: false)
-        case "row":
-            view = buildStack(node, horizontal: true)
-        case "text":
-            view = buildText(node)
-        case "sizedBox":
-            view = buildSizedBox(node)
-        case "textButton":
-            view = buildTextButton(node)
-        case "scroll":
-            view = buildScroll()
-        case "container":
-            view = buildContainer(node)
-        default:
+        if let make = AppKitMapper.builders[node.type] {
+            view = make(self, node)
+        } else {
             view = buildFallback(node)
         }
         view.setAccessibilityIdentifier(node.nodeId)
@@ -371,46 +394,102 @@ public final class AppKitMapper: NSObject {
 
     // MARK: - props
 
+    /// Canonical prop key: the contract's alias keys collapse to one applier.
+    private static let textValueKeys: Set<String> = ["data", "text", "title", "label"]
+    private static let colorKeys: Set<String> = ["color", "backgroundColor"]
+
+    static func canonicalPropKey(_ key: String) -> String {
+        if textValueKeys.contains(key) { return "text" }
+        if colorKeys.contains(key) { return "color" }
+        return key
+    }
+
     private func applyProps(_ props: [String: Any], to view: NSView, record: WidgetNode) {
         for (key, value) in props {
-            switch key {
-            case "data", "text", "title", "label":
-                if let text = value as? String {
-                    if let field = view as? NSTextField { field.stringValue = text }
-                    if let button = view as? NSButton { button.title = text }
-                }
-            case "color", "backgroundColor":
-                if let color = colorValue(value) {
-                    if record.type == "text", let field = view as? NSTextField {
-                        field.textColor = color
-                    } else {
-                        view.wantsLayer = true
-                        view.layer?.backgroundColor = color.cgColor
-                    }
-                }
-            case "decoration":
-                applyDecoration(view, record: record.withProps([key: value]))
-            case "fontSize":
-                if let field = view as? NSTextField {
-                    let size = (value as? NSNumber)?.doubleValue ?? 14
-                    field.font = .systemFont(ofSize: size, weight: fontWeight(record.props["fontWeight"] as? String ?? "regular"))
-                }
-            case "fontWeight":
-                if let field = view as? NSTextField {
-                    let size = (record.props["fontSize"] as? NSNumber)?.doubleValue ?? 14
-                    field.font = .systemFont(ofSize: size, weight: fontWeight(value as? String ?? "regular"))
-                }
-            case "borderRadius":
-                view.wantsLayer = true
-                view.layer?.cornerRadius = (value as? NSNumber)?.doubleValue ?? 0
-            case "spacing":
-                if let stack = view as? NSStackView {
-                    stack.spacing = (value as? NSNumber)?.doubleValue ?? 0
-                }
-            default:
-                break // remaining props live on the applied record (dump source)
-            }
+            applyProp(key, value, to: view, record: record)
         }
+    }
+
+    /// One changed prop touches the view; everything else lives on the applied
+    /// record (dump source). Only changed props reach this — unchanged text
+    /// keeps its live content (property keeping).
+    private func applyProp(_ key: String, _ value: Any, to view: NSView, record: WidgetNode) {
+        applyCanonicalProp(AppKitMapper.canonicalPropKey(key), value, to: view, record: record)
+    }
+
+    /// The canonical dispatch: one case per contract prop category (the case
+    /// bodies stay branch-free — defaults resolve in the appliers).
+    private func applyCanonicalProp(_ canonical: String, _ value: Any, to view: NSView, record: WidgetNode) {
+        switch canonical {
+        case "text":
+            applyTextValue(value, to: view)
+        case "color":
+            applyColor(value, to: view, record: record)
+        case "decoration":
+            applyDecoration(view, record: record.withProps(["decoration": value]))
+        case "fontSize", "fontWeight", "borderRadius", "spacing":
+            applyMetricProp(canonical, value, to: view, record: record)
+        default:
+            break // remaining props live on the applied record (dump source)
+        }
+    }
+
+    /// Numeric/metric prop categories (split dispatch keeps each switch small).
+    private func applyMetricProp(_ canonical: String, _ value: Any, to view: NSView, record: WidgetNode) {
+        switch canonical {
+        case "fontSize":
+            applyFontSize(value, to: view, record: record)
+        case "fontWeight":
+            applyFontWeight(value, to: view, record: record)
+        case "borderRadius":
+            applyBorderRadius(value, to: view)
+        case "spacing":
+            applySpacing(value, to: view)
+        default:
+            break
+        }
+    }
+
+    private func applyBorderRadius(_ value: Any, to view: NSView) {
+        view.wantsLayer = true
+        view.layer?.cornerRadius = (value as? NSNumber)?.doubleValue ?? 0
+    }
+
+    private func applySpacing(_ value: Any, to view: NSView) {
+        (view as? NSStackView)?.spacing = (value as? NSNumber)?.doubleValue ?? 0
+    }
+
+    private func applyFontSize(_ value: Any, to view: NSView, record: WidgetNode) {
+        let size = (value as? NSNumber)?.doubleValue ?? 14
+        let weightName = record.props["fontWeight"] as? String ?? "regular"
+        setFontSize(size, of: view, weightName: weightName)
+    }
+
+    private func applyFontWeight(_ value: Any, to view: NSView, record: WidgetNode) {
+        let size = (record.props["fontSize"] as? NSNumber)?.doubleValue ?? 14
+        let weightName = value as? String ?? "regular"
+        setFontSize(size, of: view, weightName: weightName)
+    }
+
+    private func applyTextValue(_ value: Any, to view: NSView) {
+        guard let text = value as? String else { return }
+        if let field = view as? NSTextField { field.stringValue = text }
+        if let button = view as? NSButton { button.title = text }
+    }
+
+    private func applyColor(_ value: Any, to view: NSView, record: WidgetNode) {
+        guard let color = colorValue(value) else { return }
+        if record.type == "text", let field = view as? NSTextField {
+            field.textColor = color
+        } else {
+            view.wantsLayer = true
+            view.layer?.backgroundColor = color.cgColor
+        }
+    }
+
+    private func setFontSize(_ size: Double, of view: NSView, weightName: String) {
+        guard let field = view as? NSTextField else { return }
+        field.font = .systemFont(ofSize: size, weight: fontWeight(weightName))
     }
 
     private func applyDecoration(_ view: NSView, record: WidgetNode) {
@@ -430,28 +509,33 @@ public final class AppKitMapper: NSObject {
         guard let hex = value as? String else { return nil }
         var cleaned = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
         if cleaned.count == 3 { cleaned = cleaned.map { "\($0)\($0)" }.joined() }
-        guard cleaned.count == 6 || cleaned.count == 8, let rgb = UInt64(cleaned, radix: 16) else { return nil }
+        guard let rgb = UInt64(cleaned, radix: 16) else { return nil }
         if cleaned.count == 8 {
-            return NSColor(calibratedRed: CGFloat((rgb >> 24) & 0xFF) / 255.0,
-                           green: CGFloat((rgb >> 16) & 0xFF) / 255.0,
-                           blue: CGFloat((rgb >> 8) & 0xFF) / 255.0,
-                           alpha: CGFloat(rgb & 0xFF) / 255.0)
+            return rgba(rgb)
         }
-        return NSColor(calibratedRed: CGFloat((rgb >> 16) & 0xFF) / 255.0,
-                       green: CGFloat((rgb >> 8) & 0xFF) / 255.0,
-                       blue: CGFloat(rgb & 0xFF) / 255.0,
-                       alpha: 1)
+        if cleaned.count == 6 {
+            return NSColor(calibratedRed: CGFloat((rgb >> 16) & 0xFF) / 255.0,
+                           green: CGFloat((rgb >> 8) & 0xFF) / 255.0,
+                           blue: CGFloat(rgb & 0xFF) / 255.0,
+                           alpha: 1)
+        }
+        return nil
     }
 
+    private func rgba(_ rgb: UInt64) -> NSColor {
+        NSColor(calibratedRed: CGFloat((rgb >> 24) & 0xFF) / 255.0,
+                green: CGFloat((rgb >> 16) & 0xFF) / 255.0,
+                blue: CGFloat((rgb >> 8) & 0xFF) / 255.0,
+                alpha: CGFloat(rgb & 0xFF) / 255.0)
+    }
+
+    private static let fontWeights: [String: NSFont.Weight] = [
+        "bold": .bold, "w600": .semibold, "semibold": .semibold,
+        "w500": .medium, "medium": .medium, "light": .light, "black": .black,
+    ]
+
     private func fontWeight(_ name: String) -> NSFont.Weight {
-        switch name {
-        case "bold": return .bold
-        case "w600", "semibold": return .semibold
-        case "w500", "medium": return .medium
-        case "light": return .light
-        case "black": return .black
-        default: return .regular
-        }
+        AppKitMapper.fontWeights[name] ?? .regular
     }
 
     // MARK: - AUI dump from live views (plan 1.3, AppKit row)

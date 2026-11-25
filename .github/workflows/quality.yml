@@ -1,0 +1,75 @@
+name: Quality
+
+on: [push, pull_request]
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch conformance pins
+        run: bash scripts/fetch-conformance.sh
+
+      - name: Bootstrap drift check
+        run: |
+          bash scripts/sync-bootstrap.sh
+          git diff --exit-code
+
+      - name: Swift tests with coverage
+        run: swift test --enable-code-coverage
+
+      - name: Export LCOV coverage
+        run: |
+          xcrun llvm-profdata merge -sparse .build/debug/codecov/default.profdata -o Coverage.profdata
+          # per-binary export + first-party prefix filter + dedupe: a combined
+          # two-binary export silently drops the second binary's records
+          rm -f coverage.lcov /tmp/raw-core.lcov /tmp/raw-appkit.lcov
+          xcrun llvm-cov export -format=lcov -instr-profile Coverage.profdata \
+            .build/debug/JSRCoreTests.xctest/Contents/MacOS/JSRCoreTests > /tmp/raw-core.lcov
+          xcrun llvm-cov export -format=lcov -instr-profile Coverage.profdata \
+            .build/debug/JSRAppKitTests.xctest/Contents/MacOS/JSRAppKitTests > /tmp/raw-appkit.lcov
+          cat /tmp/raw-core.lcov /tmp/raw-appkit.lcov \
+            | awk 'BEGIN{keep=0} /^SF:/{keep=($0 ~ "^SF:.*/Sources/(JSRCore|JSRAppKit)/")} {if(keep)print}' \
+            | awk '/^SF:/{p=$0; if(seen[p]){skip=1; next} seen[p]=1} {if(!skip)print} /^end_of_record/{skip=0}' \
+            > coverage.lcov
+          if [ ! -s coverage.lcov ]; then
+            echo "coverage.lcov missing or empty" >&2
+            exit 1
+          fi
+
+      - name: Build crap4swift (pinned)
+        run: swift build -c release --package-path .conformance/crap4swift
+
+      - name: CRAP gate (threshold 8.0)
+        run: .conformance/crap4swift/.build/release/crap4swift Sources --coverage coverage.lcov --threshold 8.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Demo conformance run (macOS host)
+        run: |
+          swift build --product JSRAppKitDemo
+          rm -rf /tmp/apple-macos
+          .build/debug/JSRAppKitDemo --conformance .conformance/js_widget_runtime/docs/conformance/fixtures --out /tmp/apple-macos
+          test -s /tmp/apple-macos/hello.result.json
+          test -s /tmp/apple-macos/counter.result.json
+          test -s /tmp/apple-macos/scroll_list.result.json
+
+      - name: Harness compare
+        run: |
+          node .conformance/js_widget_runtime/harness/harness.mjs compare \
+            --fixtures .conformance/js_widget_runtime/docs/conformance/fixtures \
+            --results /tmp/apple-macos \
+            --out-report /tmp/apple-macos-report.md
+          cat /tmp/apple-macos-report.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conformance-macos
+          path: |
+            /tmp/apple-macos/hello.result.json
+            /tmp/apple-macos/counter.result.json
+            /tmp/apple-macos/scroll_list.result.json
+            /tmp/apple-macos-report.md
