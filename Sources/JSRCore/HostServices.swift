@@ -241,12 +241,14 @@ public final class URLSessionHttp: HttpService {
 }
 
 /// `Process`-backed exec; the handler only wires this when
-/// `JSRConfiguration.allowsExec` is true.
+/// `JSRConfiguration.allowsExec` is true. `Process` does not exist on iOS,
+/// where exec resolves the named host error instead.
 public final class ProcessRunnerService: ProcessService {
     public init() {}
 
     public func run(_ command: String, completion: @escaping (Any) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
+#if os(macOS)
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
             process.arguments = ["-c", command]
@@ -261,6 +263,9 @@ public final class ProcessRunnerService: ProcessService {
             } catch {
                 completion(["__error": "exec failed: \(error.localizedDescription)"])
             }
+#else
+            completion(["__error": "exec is not supported by this host"])
+#endif
         }
     }
 }
