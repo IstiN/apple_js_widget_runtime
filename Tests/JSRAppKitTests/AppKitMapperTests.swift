@@ -398,6 +398,116 @@ private func findScroll(in view: NSView) -> NSScrollView? {
         try? FileManager.default.removeItem(atPath: bad)
     }
 
+    @Test func submitActionUsesKeyboardDonePathAndDispatchesOnSubmit() throws {
+        let host = try AppKitTestHost.make(seed: nil)
+        try host.engine.eval("""
+        jsr._handler = function(action, payload) {
+          if (action === 'go') { jsr.exportState({submitted: payload.value}); }
+        };
+        """, sourceName: "<test>")
+        let field = NSTextField(string: "")
+        field.isEditable = true
+        field.setAccessibilityIdentifier("n7")
+        host.mapper.views["n7"] = field
+        host.mapper.records["n7"] = try AuiDump.normalizeTree(payloadJSON:
+            #"{"type":"textField","props":{"value":"typed-value","onSubmit":"go"}}"#)
+        let driver = AppKitInteractionDriver(mapper: host.mapper, runtime: host.runtime, registry: host.registry, engine: host.engine)
+
+        // the submit action = the insert-newline path: commit + dispatch
+        field.stringValue = "committed"
+        #expect(driver.submit(node: "n7") == true)
+        host.registry.drain()
+        #expect((host.registry.recorder.state as? [String: Any])?["submitted"] as? String == "committed")
+
+        // the real keyboard-done delegate dispatches too
+        field.stringValue = "ended"
+        driver.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
+        host.registry.drain()
+        #expect((host.registry.recorder.state as? [String: Any])?["submitted"] as? String == "ended")
+
+        #expect(driver.submit(node: "missing") == false)
+
+        // non-editable view: the record's text content is submitted
+        host.mapper.records["n9"] = try AuiDump.normalizeTree(payloadJSON:
+            #"{"type":"textButton","text":"record-value","onSubmitted":"go"}"#)
+        host.mapper.views["n9"] = NSView() // no editable field inside
+        #expect(driver.submit(node: "n9") == true)
+        host.registry.drain()
+        #expect((host.registry.recorder.state as? [String: Any])?["submitted"] as? String == "record-value")
+    }
+
+    @Test func scrollSynthesizesWheelEventThroughTheScrollView() throws {
+        let host = try AppKitTestHost.make(seed: nil)
+        try host.engine.eval("""
+        jsr.render({type: 'scroll', children: [{type: 'column', spacing: 4, children: [...Array(60).keys()].map(function(i){ return {type: 'text', data: 'row ' + (i + 1)}; })}]});
+        """, sourceName: "<test>")
+        host.registry.drain()
+        host.mapper.container.frame = NSRect(x: 0, y: 0, width: 420, height: 700)
+        host.mapper.container.layoutSubtreeIfNeeded()
+        guard let scroll = findScroll(in: host.mapper.container) else {
+            Issue.record("no NSScrollView mapped")
+            return
+        }
+        let driver = AppKitInteractionDriver(mapper: host.mapper, runtime: host.runtime, registry: host.registry, engine: host.engine)
+        let before = scroll.contentView.bounds.origin.y
+        driver.scroll(dx: 0, dy: 60) // pointer scroll at the surface center
+        host.mapper.container.layoutSubtreeIfNeeded()
+        let after = scroll.contentView.bounds.origin.y
+        #expect(after != before) // the wheel event reached the scroll machinery
+        #expect(after >= 0) // clamped by the clip view
+
+        // the event factory produces a real scrollWheel NSEvent
+        let event = AppKitInteractionDriver.scrollWheelEvent(dx: 3, dy: 7)
+        #expect(event?.type == .scrollWheel)
+    }
+
+    @Test func l1SubmitAndScrollFixturesMatchTheirExpectedDeltas() throws {
+        // A1/A2 proof over the kit fixtures of the matching event keys: the
+        // runner keeps text[0] at the reference value (idle stays idle — the
+        // input action alone never fires the keyboard-done or pointer-scroll).
+        let fixtures = fixturesRoot()
+        for id in ["l1_on_submit", "l1_on_submitted", "l1_on_scroll"] {
+            let runner = ConformanceRunner(fixturesDir: fixtures, outDir: NSTemporaryDirectory())
+            let result = try runner.run(fixture: id)
+            #expect(result["status"] as? String == "DONE")
+            let expected = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: fixtures + "/" + id + "/expected.json"))) as? [String: Any]
+            let expect = expected?["expect"] as? [String: Any]
+            #expect((result["renders"] as? [String])?.count == (expect?["renders"] as? Int))
+            guard let delta = expect?["finalDumpDelta"] as? [String: String],
+                  let path = delta.keys.first else { continue }
+            // navigate "text[0].data" over the live final dump
+            var node: Any = result["finalDump"] ?? [:]
+            var occurrence: [String: Int] = [:]
+            let parts = path.split(separator: ".").map(String.init)
+            var ok = true
+            for part in parts {
+                if let bracket = part.firstIndex(of: "[") {
+                    let type = String(part[..<bracket])
+                    let index = Int(part[part.index(after: bracket)..<part.index(before: part.endIndex)]) ?? 0
+                    occurrence[type, default: -1] += 1
+                    guard let children = (node as? [String: Any])?["children"] as? [[String: Any]],
+                          let match = children.first(where: { ($0["type"] as? String) == type }),
+                          occurrence[type]! == index else {
+                        ok = false
+                        break
+                    }
+                    node = match
+                } else {
+                    // the first prop segment resolves through the node's props
+                    // (harness resolveDeltaPath semantics)
+                    guard let value = ((node as? [String: Any])?["props"] as? [String: Any])?[part]
+                            ?? (node as? [String: Any])?[part] else {
+                        ok = false
+                        break
+                    }
+                    node = value
+                }
+            }
+            #expect(ok)
+            #expect(node as? String == delta[path])
+        }
+    }
+
     @Test func editableFieldInputDispatchesOnChangedThroughDelegate() throws {
         let host = try AppKitTestHost.make()
         // inject an editable field + record (tests own the mapper stores)

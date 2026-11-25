@@ -1,4 +1,4 @@
-// Generated from IstiN/js_widget_runtime@95ef8edc4698:src/bootstrap-widget.js by scripts/sync-bootstrap.sh — do not edit
+// Generated from IstiN/js_widget_runtime@4457ff099541:src/bootstrap-widget.js by scripts/sync-bootstrap.sh — do not edit
 // Generated from IstiN/flutter_js_widget_runtime@1fa2ec4:lib/src/runtime/js_widget_bootstrap.dart (widget half) by scripts/extract_bootstrap.mjs — do not edit
 Object.assign(jsr, {
 ease: {

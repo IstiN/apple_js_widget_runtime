@@ -48,3 +48,24 @@ apply on macOS).
 drift check, `swift test --enable-code-coverage`, LCOV export, crap4swift gate
 (threshold 8.0), demo run, harness compare; artifact `conformance-macos`.
 Node 22 for the harness.
+
+## iOS (CI only — the lane Mac has no Xcode/iOS SDK)
+
+The iOS leg runs in the `ios` job of the same workflow (macos-15 runner):
+
+1. `brew install xcodegen` and `xcodegen generate --spec Demo/iOS/project.yml`
+   (the spec builds the `JSRUIDemo` app + `JSRUIKitTests` from the SwiftPM
+   package).
+2. `xcodebuild test` on the simulator (`iPhone 16`, or the first available
+   iPhone when the image lacks it — the job records the pick) with
+   `-enableCodeCoverage YES -resultBundlePath Coverage.xcresult`. The
+   `conformanceSeedsPassWithRealViews` test runs the seeds through the
+   `UIKitMapper` + `UIKitInteractionDriver` in the application window and
+   writes the `ios` `result.json` files into the app container (`tmp/jsr-ios`).
+3. The job collects the results from `xcrun simctl get_app_container`, runs
+   the harness compare (artifact `conformance-ios`), converts the xccov
+   report with `scripts/xcresult-to-lcov.swift`, and gates crap4swift on
+   `Sources/JSRCore Sources/JSRUIKit` with the iOS lcov (threshold 8.0).
+
+Locally on the lane Mac only the syntax is verifiable:
+`xcrun swiftc -parse` over the UIKit/demo/test sources.

@@ -42,7 +42,7 @@ jobs:
         run: swift build -c release --package-path .conformance/crap4swift
 
       - name: CRAP gate (threshold 8.0)
-        run: .conformance/crap4swift/.build/release/crap4swift Sources --coverage coverage.lcov --threshold 8.0
+        run: .conformance/crap4swift/.build/release/crap4swift Sources/JSRCore Sources/JSRAppKit --coverage coverage.lcov --threshold 8.0
 
       - uses: actions/setup-node@v4
         with:
@@ -73,3 +73,91 @@ jobs:
             /tmp/apple-macos/counter.result.json
             /tmp/apple-macos/scroll_list.result.json
             /tmp/apple-macos-report.md
+
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch conformance pins
+        run: bash scripts/fetch-conformance.sh
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate iOS demo project
+        run: xcodegen generate --spec Demo/iOS/project.yml
+
+      - name: Pick simulator destination
+        run: |
+          DEST="platform=iOS Simulator,name=iPhone 16"
+          if ! xcrun simctl list devices available | grep -q "iPhone 16"; then
+            PICKED=$(xcrun simctl list devices available | grep -m1 -oE "iPhone [A-Za-z0-9 ]+[^(]*" | sed 's/[[:space:]]*$//')
+            echo "iPhone 16 not available; picked: $PICKED"
+            DEST="platform=iOS Simulator,name=$PICKED"
+          fi
+          echo "IOS_DEST=$DEST" >> "$GITHUB_ENV"
+
+      - name: xcodebuild test (iOS simulator, coverage)
+        run: |
+          xcodebuild test -project Demo/iOS/JSRUIDemo.xcodeproj -scheme JSRUIDemo \
+            -destination "$IOS_DEST" -enableCodeCoverage YES \
+            -resultBundlePath Coverage.xcresult | tail -40
+
+      - name: Collect ios conformance results from the app container
+        run: |
+          mkdir -p /tmp/apple-ios
+          UDID=$(xcrun simctl list devices booted | grep -m1 -oE "[A-F0-9]{8}-[A-F0-9-]{27}")
+          if [ -z "$UDID" ]; then
+            NAME=$(echo "$IOS_DEST" | sed -E 's/.*name=//')
+            xcrun simctl boot "$NAME" 2>/dev/null || true
+            sleep 10
+            UDID=$(xcrun simctl list devices | grep "$NAME" | grep -m1 -oE "[A-F0-9]{8}-[A-F0-9-]{27}")
+          fi
+          echo "simulator UDID: $UDID"
+          CONTAINER=$(xcrun simctl get_app_container "$UDID" dev.fa1.JSRUIDemo data 2>/dev/null || true)
+          if [ -n "$CONTAINER" ] && [ -d "$CONTAINER/tmp/jsr-ios" ]; then
+            cp "$CONTAINER"/tmp/jsr-ios/*.result.json /tmp/apple-ios/
+          else
+            echo "no app container results at \$CONTAINER/tmp/jsr-ios" >&2
+            exit 1
+          fi
+          test -s /tmp/apple-ios/hello.result.json
+          test -s /tmp/apple-ios/counter.result.json
+          test -s /tmp/apple-ios/scroll_list.result.json
+
+      - name: Export LCOV coverage (iOS)
+        run: |
+          swift scripts/xcresult-to-lcov.swift --xcresult Coverage.xcresult --out coverage-ios.lcov
+          if [ ! -s coverage-ios.lcov ]; then
+            echo "coverage-ios.lcov missing or empty" >&2
+            exit 1
+          fi
+
+      - name: Build crap4swift (pinned)
+        run: swift build -c release --package-path .conformance/crap4swift
+
+      - name: CRAP gate on the iOS coverage (threshold 8.0)
+        run: .conformance/crap4swift/.build/release/crap4swift Sources/JSRCore Sources/JSRUIKit --coverage coverage-ios.lcov --threshold 8.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Harness compare (ios results)
+        run: |
+          node .conformance/js_widget_runtime/harness/harness.mjs compare \
+            --fixtures .conformance/js_widget_runtime/docs/conformance/fixtures \
+            --results /tmp/apple-ios \
+            --out-report /tmp/apple-ios-report.md
+          cat /tmp/apple-ios-report.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: conformance-ios
+          path: |
+            /tmp/apple-ios/
+            /tmp/apple-ios-report.md
+            coverage-ios.lcov
+          if-no-files-found: warn

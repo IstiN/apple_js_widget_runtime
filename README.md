@@ -37,11 +37,20 @@ done | awk 'BEGIN{keep=0} /^SF:/{keep=($0 ~ "^SF:.*/Sources/(JSRCore|JSRAppKit)/
   | awk '/^SF:/{p=$0; if(seen[p]){skip=1; next} seen[p]=1} {if(!skip)print} /^end_of_record/{skip=0}' \
   > coverage.lcov
 
-# CRAP-4 gate, first-party sources only, threshold 8.0 (pinned crap4swift)
+# CRAP-4 gate, first-party sources only, threshold 8.0 (pinned crap4swift);
+# macOS covers JSRCore+JSRAppKit — JSRUIKit is gated by the iOS job with the
+# iOS lcov (no macOS coverage exists for iOS-only code)
 bash scripts/fetch-conformance.sh
 swift build -c release --package-path .conformance/crap4swift
-.conformance/crap4swift/.build/release/crap4swift Sources --coverage coverage.lcov --threshold 8.0
+.conformance/crap4swift/.build/release/crap4swift Sources/JSRCore Sources/JSRAppKit --coverage coverage.lcov --threshold 8.0
 ```
+
+iOS (`Quality` job `ios` only — needs Xcode + the iOS SDK, not available on
+the lane Mac): the job builds the `JSRUIDemo` demo project via XcodeGen
+(`xcodegen generate --spec Demo/iOS/project.yml`), runs `JSRUIKitTests` on the
+simulator with `-enableCodeCoverage YES`, converts the xcresult with
+`scripts/xcresult-to-lcov.swift` and gates crap4swift on
+`Sources/JSRCore Sources/JSRUIKit` with the iOS lcov file.
 
 A missing or empty `coverage.lcov` fails the job. A function above 8.0 is
 split or gets more unit tests — the threshold is never raised and no function

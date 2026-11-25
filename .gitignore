@@ -2,4 +2,6 @@
 .conformance/
 *.profdata
 coverage.lcov
+coverage-ios.lcov
+*.profraw
 .DS_Store
