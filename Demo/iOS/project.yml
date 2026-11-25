@@ -56,7 +56,7 @@ schemes:
       gatherCoverageData: true
       coverageTargets:
         - JSRUIDemo
-        - AppleJSWidgetRuntime/JSRCore
-        - AppleJSWidgetRuntime/JSRUIKit
+        - package: AppleJSWidgetRuntime/JSRCore
+        - package: AppleJSWidgetRuntime/JSRUIKit
       targets:
         - JSRUIKitTests

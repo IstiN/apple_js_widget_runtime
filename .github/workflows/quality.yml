@@ -153,6 +153,10 @@ jobs:
             echo "xccov path OK: $(grep -c '^SF:' coverage-ios.lcov) records"
           else
             echo "xccov path yielded no records; llvm-cov fallback"
+            echo "xcresult layout:" >&2
+            find Coverage.xcresult -maxdepth 5 -type d | head -30 >&2 || true
+            echo "xccov file list:" >&2
+            xcrun xccov view --file-list Coverage.xcresult 2>&1 | head -20 >&2 || true
             # Xcode 16 stores coverage as `profdna` inside .xccovarchive bundles
             PROFDATA_LIST=$(find Coverage.xcresult \( -name "*.profdata" -o -name "profdna" \))
             echo "profdatas: $PROFDATA_LIST"
