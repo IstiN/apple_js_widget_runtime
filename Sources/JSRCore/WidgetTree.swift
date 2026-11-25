@@ -26,7 +26,7 @@ public struct WidgetNode {
                     codingPath: [],
                     debugDescription: "node without 'type': \(any)"))
             }
-            let node = WidgetNode(type: type, props: dict, children: [],
+            var node = WidgetNode(type: type, props: dict, children: [],
                                   nodeId: "n\(counter)")
             counter += 1
             if let arr = dict["children"] as? [Any] {
