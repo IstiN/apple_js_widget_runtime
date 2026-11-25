@@ -48,6 +48,24 @@ public final class JsContextEngine: JsEngine {
         self.callback = callback
     }
 
+    /// Evaluates and converts the result to a native value; dict/array/number/
+    /// string/bool, or ["__exception": text] on a JS error. Test/debug helper,
+    /// not part of the adapter interface.
+    public func evaluate(_ code: String) -> Any? {
+        var caught: String?
+        context.exceptionHandler = { _, exception in caught = exception?.toString() }
+        let value = context.evaluateScript(code)
+        context.exceptionHandler = nil
+        if let caught { return ["__exception": caught] }
+        guard let value, !value.isUndefined, !value.isNull else { return nil }
+        if let object = value.toObject() as? [String: Any] { return object }
+        if let array = value.toObject() as? [Any] { return array }
+        if value.isNumber { return value.toNumber() }
+        if value.isString { return value.toString() }
+        if value.isBoolean { return value.toBool() }
+        return value.toString()
+    }
+
     /// JavaScriptCore drains pending jobs after every `evaluateScript`.
     public func executePendingJobs() {}
 
