@@ -284,9 +284,14 @@ public final class ConformanceRunner {
     private func finish(id: String, status: String, error: String? = nil, skippedReason: String? = nil, recorder: HostRecorder, fixtureDir: String, viewDriver: InteractionDriver? = nil) -> [String: Any] {
         let dump = ConformanceRunner.initialDump(of: recorder)
         let finalDump = ConformanceRunner.finalDump(of: recorder, viewDriver: viewDriver, custom: customFinalDump)
+#if os(iOS)
+        let platformName = "ios"
+#else
+        let platformName = "macos"
+#endif
         let result: [String: Any] = [
             "fixture": id,
-            "platform": "macos",
+            "platform": platformName,
             "status": status,
             "dump": dump,
             "trace": recorder.trace,

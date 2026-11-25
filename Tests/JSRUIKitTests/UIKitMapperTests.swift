@@ -29,8 +29,10 @@ private func fixturesRoot() -> String {
         let center = container.subviews[0]
         #expect(center.accessibilityIdentifier == "n0")
         #expect(mapper.views["n0"] != nil && mapper.views["n1"] != nil)
-        #expect(mapper.views["n2"] is UIButton)
-        #expect((mapper.views["n2"] as? UIButton)?.title(for: .normal) == "Tap me")
+        // depth-first pre-order: n0 center, n1 column, n2 text, n3 textButton
+        #expect((mapper.views["n2"] as? UILabel)?.text == "Hello")
+        #expect(mapper.views["n3"] is UIButton)
+        #expect((mapper.views["n3"] as? UIButton)?.title(for: .normal) == "Tap me")
         #expect(center.subviews.first is UIStackView)
     }
 
@@ -73,7 +75,7 @@ private func fixturesRoot() -> String {
         try engine.eval("""
         var taps = 0;
         jsr._handler = function(action) {
-          if (action === 'tap') { taps += 1; jsr.render({type:'text', data: String(taps)}); }
+          if (action === 'tap') { taps += 1; jsr.render({type:'column',children:[{type:'text',data:String(taps)},{type:'textButton',text:'+1',onTap:'tap'}]}); }
         };
         jsr.render({type:'column',children:[{type:'text',data:'0'},{type:'textButton',text:'+1',onTap:'tap'}]});
         """, sourceName: "counter")
