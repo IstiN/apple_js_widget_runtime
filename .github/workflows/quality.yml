@@ -118,7 +118,7 @@ jobs:
           set -o pipefail
           xcodebuild test -project Demo/iOS/JSRUIDemo.xcodeproj -scheme JSRUIDemo \
             -destination "$IOS_DEST" -enableCodeCoverage YES \
-            -resultBundlePath Coverage.xcresult | tail -40
+            -resultBundlePath Coverage.xcresult
 
       - name: Collect ios conformance results from the app container
         run: |
