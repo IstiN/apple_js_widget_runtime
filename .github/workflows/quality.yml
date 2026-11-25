@@ -153,7 +153,8 @@ jobs:
             echo "xccov path OK: $(grep -c '^SF:' coverage-ios.lcov) records"
           else
             echo "xccov path yielded no records; llvm-cov fallback"
-            PROFDATA_LIST=$(find Coverage.xcresult -name "*.profdata")
+            # Xcode 16 stores coverage as `profdna` inside .xccovarchive bundles
+            PROFDATA_LIST=$(find Coverage.xcresult \( -name "*.profdata" -o -name "profdna" \))
             echo "profdatas: $PROFDATA_LIST"
             test -n "$PROFDATA_LIST"
             # shellcheck disable=SC2086
