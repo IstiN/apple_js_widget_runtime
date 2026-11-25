@@ -10,6 +10,9 @@ public protocol InteractionDriver: AnyObject {
     /// `target` is a nodeId ("n2") or visible text; returns false when not found.
     func tap(target: String) -> Bool
     func input(node: String, value: String) -> Bool
+    /// Keyboard done on the text node: dispatches `onSubmit` ?? `onSubmitted`
+    /// (PROTOCOL v0.2 amendment A1) with `{"value": <current text>}`.
+    func submit(node: String) -> Bool
     func scroll(dx: Double, dy: Double)
     func swipe(x1: Double, y1: Double, x2: Double, y2: Double, ms: Double)
     /// Real time on every platform.
@@ -55,6 +58,15 @@ public final class TreeInteractionDriver: InteractionDriver {
         return true
     }
 
+    public func submit(node target: String) -> Bool {
+        guard let node = findNode(target: target, tree: currentTree()),
+              let action = node.events["onSubmit"] ?? node.events["onSubmitted"] else { return false }
+        let value = node.textContent ?? ""
+        try? runtime.callEvent(action, payloadJson: JSON.stringify(["value": value]))
+        registry.drain()
+        return true
+    }
+
     public func scroll(dx: Double, dy: Double) {
         // The tree-level driver has no scroll container; view drivers (P2/P3)
         // synthesize the scroll events on the mapped view.
@@ -94,6 +106,11 @@ public final class ConformanceRunner {
     private let outDir: String
     /// Instance id of the host run; lands in dumps via the routing tag.
     public var iid = "apple-host"
+    /// View-backed drivers can produce the FINAL dump from live views
+    /// (text-bearing props read from the view, plan 1.3). nil → record-derived.
+    public var customFinalDump: ((_ interaction: InteractionDriver) -> [String: Any]?)?
+    /// Observes every `__jsr_render` payload (view mappers re-render from it).
+    public var renderObserver: ((_ payloadJSON: String) -> Void)?
 
     public init(fixturesDir: String, outDir: String) {
         self.fixturesDir = fixturesDir
@@ -137,21 +154,28 @@ public final class ConformanceRunner {
         }
         registryRef = registry
         let recorder = registry.recorder
+        // the view driver mounts BEFORE the widget evaluates so its mapper
+        // observes the initial render through renderObserver
+        let interaction = try driverFactory(runtime, recorder, registry, engine)
 
         do {
-            try runtime.start(sink: { registry.dispatch(channel: $0, payload: $1) }, iid: iid)
+            try runtime.start(sink: { [weak self] channel, payload in
+                registry.dispatch(channel: channel, payload: payload)
+                if channel == "__jsr_render" {
+                    self?.renderObserver?(payload)
+                }
+            }, iid: iid)
             try engine.eval(widget, sourceName: "widget.js")
             registry.drain()
 
-            let interaction = driverFactory(runtime, recorder, registry, engine)
             let actions = expected["actions"] as? [[String: Any]] ?? []
             for action in actions {
                 apply(action, to: interaction)
             }
         } catch {
-            return finish(id: id, status: "DONE", error: "\(error)", recorder: recorder, fixtureDir: fixtureDir, registry: registry)
+            return finish(id: id, status: "DONE", error: "\(error)", recorder: recorder, fixtureDir: fixtureDir, viewDriver: interaction)
         }
-        return finish(id: id, status: "DONE", recorder: recorder, fixtureDir: fixtureDir, registry: registry)
+        return finish(id: id, status: "DONE", recorder: recorder, fixtureDir: fixtureDir, viewDriver: interaction)
     }
 
     /// Runs every fixture directory under `fixturesDir`.
@@ -177,6 +201,8 @@ public final class ConformanceRunner {
             _ = driver.tap(target: tap)
         } else if let input = action["input"] as? [String: Any] {
             _ = driver.input(node: input["node"] as? String ?? "", value: input["value"] as? String ?? "")
+        } else if let submit = action["submit"] as? String {
+            _ = driver.submit(node: submit)
         } else if let scroll = action["scroll"] as? [Any], scroll.count == 2 {
             driver.scroll(dx: scroll[0] as? Double ?? (scroll[0] as? NSNumber)?.doubleValue ?? 0,
                           dy: scroll[1] as? Double ?? (scroll[1] as? NSNumber)?.doubleValue ?? 0)
@@ -191,13 +217,15 @@ public final class ConformanceRunner {
     }
 
     /// result.json per plan 1.4: PASS is set by the harness; the runner writes DONE/SKIP.
-    private func finish(id: String, status: String, error: String? = nil, skippedReason: String? = nil, recorder: HostRecorder, fixtureDir: String, registry: ChannelRegistry? = nil) -> [String: Any] {
+    private func finish(id: String, status: String, error: String? = nil, skippedReason: String? = nil, recorder: HostRecorder, fixtureDir: String, viewDriver: InteractionDriver? = nil) -> [String: Any] {
         var dump: Any = NSNull()
         var finalDump: Any = NSNull()
         if let first = recorder.renders.first, let tree = try? AuiDump.normalizeTree(payloadJSON: first) {
             dump = tree.jsonObject
         }
-        if let last = recorder.renders.last, let tree = try? AuiDump.normalizeTree(payloadJSON: last) {
+        if let custom = customFinalDump, let viewDriver, let live = custom(viewDriver) {
+            finalDump = live // view-backed dump: text-bearing props read live from the view
+        } else if let last = recorder.renders.last, let tree = try? AuiDump.normalizeTree(payloadJSON: last) {
             finalDump = tree.jsonObject
         }
         let result: [String: Any] = [

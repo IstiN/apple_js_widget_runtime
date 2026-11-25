@@ -1,0 +1,433 @@
+{
+  "platform": "macos",
+  "updatedAt": "2026-11-25",
+  "rows": [
+    {
+      "type": "column",
+      "status": "yes"
+    },
+    {
+      "type": "row",
+      "status": "yes"
+    },
+    {
+      "type": "stack",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "center",
+      "status": "yes"
+    },
+    {
+      "type": "align",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "expanded",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "flexible",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "wrap",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "padding",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "sizedBox",
+      "status": "yes"
+    },
+    {
+      "type": "spacer",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "safeArea",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "text",
+      "status": "yes"
+    },
+    {
+      "type": "icon",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "divider",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "circularProgressIndicator",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "linearProgressIndicator",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "container",
+      "status": "yes"
+    },
+    {
+      "type": "card",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "inkWell",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "scroll",
+      "status": "yes"
+    },
+    {
+      "type": "listView",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "gridView",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "adaptive",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "listTile",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "markdown",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "circleAvatar",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "chip",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "badge",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "switch",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "checkbox",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "slider",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "dropdown",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "button",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "textButton",
+      "status": "yes"
+    },
+    {
+      "type": "outlinedButton",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "iconButton",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "appBar",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "navigationBar",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "tabBar",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "fab",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "segmentedButton",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "radio",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "searchBar",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "tooltip",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "popupMenu",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "banner",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "bottomAppBar",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "bottomSheet",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "dialog",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "snackBar",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "navigationRail",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "carousel",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "image",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "svg",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "aspectRatio",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "opacity",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "clipRRect",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "textField",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "textArea",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "chart",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "flChart",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "datePicker",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "timePicker",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "drawer",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "blur",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "animatedContainer",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "animatedOpacity",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "animatedPositioned",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "entrance",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "animatedSwitcher",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "gestureDetector",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "path",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "rect",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "circle",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "line",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "polygon",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "map",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "absoluteFill",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "fill",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "video",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "audio",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "audio_player",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "webView",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "scene3d",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "three",
+      "status": "partial",
+      "reason": "fallback"
+    },
+    {
+      "type": "voxel",
+      "status": "partial",
+      "reason": "fallback"
+    }
+  ]
+}

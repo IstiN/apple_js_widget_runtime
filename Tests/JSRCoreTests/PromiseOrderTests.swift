@@ -40,3 +40,37 @@ import Foundation
         #expect(host.recorder.consoleLines == ["err:hostCall is not supported by this host"])
     }
 }
+
+// PROTOCOL v0.2 amendment A1: `submit` dispatches onSubmit ?? onSubmitted.
+@Suite struct TreeDriverSubmitTests {
+    @Test func submitDispatchesOnSubmitWithValue() throws {
+        let host = try TestHost.make()
+        try host.eval("""
+        jsr.render({type: 'column', children: [{type: 'textField', value: 'typed', onSubmit: 'go'}]});
+        jsr.onEvent(function(actionId, payload) {
+          if (actionId === 'go') { jsr.setTitle('submitted:' + payload.value); }
+        });
+        """)
+        let driver = TreeInteractionDriver(runtime: host.runtime, recorder: host.registry.recorder, registry: host.registry, engine: host.engine)
+        #expect(driver.submit(node: "n1"))
+        #expect(host.registry.recorder.title == "submitted:typed")
+    }
+
+    @Test func submitPrefersOnSubmitOverOnSubmitted() throws {
+        let host = try TestHost.make()
+        try host.eval("""
+        jsr.render({type: 'textField', onSubmitted: 'legacy', onSubmit: 'modern'});
+        jsr.onEvent(function(actionId) { jsr.setTitle('got:' + actionId); });
+        """)
+        let driver = TreeInteractionDriver(runtime: host.runtime, recorder: host.registry.recorder, registry: host.registry, engine: host.engine)
+        #expect(driver.submit(node: "n0"))
+        #expect(host.registry.recorder.title == "got:modern")
+    }
+
+    @Test func submitWithoutHandlersReturnsFalse() throws {
+        let host = try TestHost.make()
+        try host.eval("jsr.render({type: 'textField'});")
+        let driver = TreeInteractionDriver(runtime: host.runtime, recorder: host.registry.recorder, registry: host.registry, engine: host.engine)
+        #expect(!driver.submit(node: "n0"))
+    }
+}

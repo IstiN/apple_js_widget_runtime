@@ -83,7 +83,7 @@ public struct WidgetNode {
 
     /// Text-bearing props per PROTOCOL.md section 2 (read live from the node record).
     public var textContent: String? {
-        for key in ["data", "text", "hint", "value", "label", "title"] {
+        for key in ["data", "text", "hint", "value", "label", "title", "initialValue"] {
             if let text = props[key] as? String { return text }
         }
         return nil
