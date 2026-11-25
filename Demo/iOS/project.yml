@@ -33,6 +33,7 @@ targets:
     platform: iOS
     sources:
       - path: ../../Tests/JSRUIKitTests
+      - path: ../../Tests/JSRCoreTests
     dependencies:
       - target: JSRUIDemo
       - package: AppleJSWidgetRuntime
