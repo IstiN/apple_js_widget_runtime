@@ -21,14 +21,22 @@ jobs:
 
       - name: Export LCOV coverage
         run: |
-          xcrun llvm-profdata merge -sparse .build/debug/codecov/default.profdata -o Coverage.profdata
+          set -euo pipefail
+          # SwiftPM's build dir differs per toolchain (.build/debug locally,
+          # .build/<triple>/debug on CI Xcode) — discover the artifacts.
+          PROFDATA=$(find .build -path "*codecov/default.profdata" | head -1)
+          CORE_XCT=$(find .build -type d -name "JSRCoreTests.xctest" | head -1)
+          APPKIT_XCT=$(find .build -type d -name "JSRAppKitTests.xctest" | head -1)
+          echo "profdata=$PROFDATA core=$CORE_XCT appkit=$APPKIT_XCT"
+          test -n "$PROFDATA" && test -n "$CORE_XCT" && test -n "$APPKIT_XCT"
           # per-binary export + first-party prefix filter + dedupe: a combined
           # two-binary export silently drops the second binary's records
+          xcrun llvm-profdata merge -sparse "$PROFDATA" -o Coverage.profdata
           rm -f coverage.lcov /tmp/raw-core.lcov /tmp/raw-appkit.lcov
           xcrun llvm-cov export -format=lcov -instr-profile Coverage.profdata \
-            .build/debug/JSRCoreTests.xctest/Contents/MacOS/JSRCoreTests > /tmp/raw-core.lcov
+            "$CORE_XCT/Contents/MacOS/JSRCoreTests" > /tmp/raw-core.lcov
           xcrun llvm-cov export -format=lcov -instr-profile Coverage.profdata \
-            .build/debug/JSRAppKitTests.xctest/Contents/MacOS/JSRAppKitTests > /tmp/raw-appkit.lcov
+            "$APPKIT_XCT/Contents/MacOS/JSRAppKitTests" > /tmp/raw-appkit.lcov
           cat /tmp/raw-core.lcov /tmp/raw-appkit.lcov \
             | awk 'BEGIN{keep=0} /^SF:/{keep=($0 ~ "^SF:.*/Sources/(JSRCore|JSRAppKit)/")} {if(keep)print}' \
             | awk '/^SF:/{p=$0; if(seen[p]){skip=1; next} seen[p]=1} {if(!skip)print} /^end_of_record/{skip=0}' \
