@@ -109,36 +109,34 @@ jobs:
 
       - name: Pick simulator destination
         run: |
-          DEST="platform=iOS Simulator,name=iPhone 16"
-          if ! xcrun simctl list devices available | grep -q "iPhone 16"; then
-            PICKED=$(xcrun simctl list devices available | grep -m1 -oE "iPhone [A-Za-z0-9 ]+[^(]*" | sed 's/[[:space:]]*$//')
-            echo "iPhone 16 not available; picked: $PICKED"
-            DEST="platform=iOS Simulator,name=$PICKED"
+          UDID=$(xcrun simctl list devices available | grep -m1 "iPhone 16 (" | grep -oE "[A-F0-9]{8}-[A-F0-9-]{27}" || true)
+          if [ -z "$UDID" ]; then
+            UDID=$(xcrun simctl list devices available | grep -m1 "iPhone" | grep -oE "[A-F0-9]{8}-[A-F0-9-]{27}")
           fi
-          echo "IOS_DEST=$DEST" >> "$GITHUB_ENV"
+          echo "picked simulator UDID: $UDID"
+          test -n "$UDID"
+          echo "IOS_UDID=$UDID" >> "$GITHUB_ENV"
 
       - name: xcodebuild test (iOS simulator, coverage)
         run: |
           set -o pipefail
           xcodebuild test -project Demo/iOS/JSRUIDemo.xcodeproj -scheme JSRUIDemo \
-            -destination "$IOS_DEST" -enableCodeCoverage YES \
+            -destination "platform=iOS Simulator,id=$IOS_UDID" -enableCodeCoverage YES \
             -resultBundlePath Coverage.xcresult
 
       - name: Collect ios conformance results from the app container
         run: |
           mkdir -p /tmp/apple-ios
-          UDID=$(xcrun simctl list devices booted | grep -m1 -oE "[A-F0-9]{8}-[A-F0-9-]{27}")
-          if [ -z "$UDID" ]; then
-            NAME=$(echo "$IOS_DEST" | sed -E 's/.*name=//')
-            xcrun simctl boot "$NAME" 2>/dev/null || true
-            sleep 10
-            UDID=$(xcrun simctl list devices | grep "$NAME" | grep -m1 -oE "[A-F0-9]{8}-[A-F0-9-]{27}")
-          fi
-          echo "simulator UDID: $UDID"
-          CONTAINER=$(xcrun simctl get_app_container "$UDID" dev.fa1.JSRUIDemo data 2>/dev/null || true)
+          # the same UDID xcodebuild tested on; bootstatus boots it when
+          # xcodebuild shut it down after testing
+          xcrun simctl bootstatus "$IOS_UDID" -b
+          CONTAINER=$(xcrun simctl get_app_container "$IOS_UDID" dev.fa1.JSRUIDemo data 2>/dev/null || true)
+          echo "app container: $CONTAINER"
           if [ -n "$CONTAINER" ] && [ -d "$CONTAINER/tmp/jsr-ios" ]; then
             cp "$CONTAINER"/tmp/jsr-ios/*.result.json /tmp/apple-ios/
           else
+            echo "container tmp listing:" >&2
+            ls "$CONTAINER/tmp" 2>&1 || true >&2
             echo "no app container results at \$CONTAINER/tmp/jsr-ios" >&2
             exit 1
           fi
