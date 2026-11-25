@@ -31,7 +31,7 @@ jobs:
           xcrun llvm-profdata merge -sparse "$PROFDATA" -o Coverage.profdata
           rm -f coverage.lcov /tmp/raw-*.lcov
           COUNT=0
-          for BIN in $(find .build -type f -path "*/Contents/MacOS/*" | grep "\.xctest/" | sort -u); do
+          for BIN in $(find .build -type f -path "*/Contents/MacOS/*" | grep "\.xctest/" | grep -v "\.dSYM/" | sort -u); do
             echo "exporting coverage from: $BIN"
             # one export per binary: a combined multi-binary export silently
             # drops the second binary's records

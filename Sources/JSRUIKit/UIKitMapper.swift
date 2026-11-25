@@ -11,7 +11,7 @@ import JSRCore
 /// Flipped by default; container views host their children with Auto Layout.
 final class UIKitContainerView: UIView {}
 
-final class UIKitMapper: NSObject {
+public final class UIKitMapper: NSObject {
     /// Host-to-JS lane for widget events (callEvent on the runtime).
     var onEvent: ((_ actionId: String, _ payloadJson: String) -> Void)?
 
