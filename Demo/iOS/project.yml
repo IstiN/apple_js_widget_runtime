@@ -53,5 +53,10 @@ schemes:
       config: Debug
     test:
       config: Debug
+      gatherCoverageData: true
+      coverageTargets:
+        - JSRUIDemo
+        - AppleJSWidgetRuntime/JSRCore
+        - AppleJSWidgetRuntime/JSRUIKit
       targets:
         - JSRUIKitTests
