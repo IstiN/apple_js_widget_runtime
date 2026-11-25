@@ -2,7 +2,7 @@
 import UIKit
 import Testing
 import JSRCore
-import JSRUIKit
+@testable import JSRUIKit
 @testable import JSRUIDemo
 
 // UIKit mapping and conformance with real UIKit views, hosted in the demo
