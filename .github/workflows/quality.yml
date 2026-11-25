@@ -159,8 +159,10 @@ jobs:
             find Coverage.xcresult -maxdepth 5 -type d | head -30 >&2 || true
             echo "xccov file list:" >&2
             xcrun xccov view --file-list Coverage.xcresult 2>&1 | head -20 >&2 || true
-            # Xcode 16 stores coverage as `profdna` inside .xccovarchive bundles
-            PROFDATA_LIST=$(find Coverage.xcresult \( -name "*.profdata" -o -name "profdna" \))
+            # scheme env LLVM_PROFILE_FILE writes the instrumented simulator
+            # processes' profraws to a fixed host path (simulator processes are
+            # not sandboxed against the host fs); the xcresult may add profdata
+            PROFDATA_LIST="$(ls /Users/runner/work/flutter_js_widget_runtime/flutter_js_widget_runtime/ios-cov-*.profraw 2>/dev/null || true) $(find Coverage.xcresult \( -name "*.profdata" -o -name "profdna" \) 2>/dev/null || true)"
             echo "profdatas: $PROFDATA_LIST"
             test -n "$PROFDATA_LIST"
             # shellcheck disable=SC2086
