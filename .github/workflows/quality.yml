@@ -107,6 +107,7 @@ jobs:
 
       - name: xcodebuild test (iOS simulator, coverage)
         run: |
+          set -o pipefail
           xcodebuild test -project Demo/iOS/JSRUIDemo.xcodeproj -scheme JSRUIDemo \
             -destination "$IOS_DEST" -enableCodeCoverage YES \
             -resultBundlePath Coverage.xcresult | tail -40

@@ -15,6 +15,9 @@ targets:
       - path: .
         excludes:
           - "project.yml"
+      - path: ../../.conformance/js_widget_runtime/docs/conformance/fixtures
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: AppleJSWidgetRuntime
         products:
@@ -22,7 +25,6 @@ targets:
           - JSRUIKit
     settings:
       base:
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         SWIFT_VERSION: "5.9"
   JSRUIKitTests:
