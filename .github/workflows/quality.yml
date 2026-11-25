@@ -59,6 +59,13 @@ jobs:
 
       - name: Harness compare
         run: |
+          # guard: the pinned harness exits 0 with an empty 0% score when the
+          # results dir holds no *.result.json (kit defect, fixed in wave D)
+          COUNT=$(ls -1 /tmp/apple-macos/*.result.json 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$COUNT" -lt 3 ]; then
+            echo "expected >= 3 *.result.json in /tmp/apple-macos, found $COUNT" >&2
+            exit 1
+          fi
           node .conformance/js_widget_runtime/harness/harness.mjs compare \
             --fixtures .conformance/js_widget_runtime/docs/conformance/fixtures \
             --results /tmp/apple-macos \
@@ -146,6 +153,13 @@ jobs:
 
       - name: Harness compare (ios results)
         run: |
+          # guard: the pinned harness exits 0 with an empty 0% score when the
+          # results dir holds no *.result.json (kit defect, fixed in wave D)
+          COUNT=$(ls -1 /tmp/apple-ios/*.result.json 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$COUNT" -lt 3 ]; then
+            echo "expected >= 3 *.result.json in /tmp/apple-ios, found $COUNT" >&2
+            exit 1
+          fi
           node .conformance/js_widget_runtime/harness/harness.mjs compare \
             --fixtures .conformance/js_widget_runtime/docs/conformance/fixtures \
             --results /tmp/apple-ios \
