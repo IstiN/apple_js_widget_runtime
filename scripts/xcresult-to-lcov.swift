@@ -16,9 +16,14 @@
 //   xcrun llvm-cov export -format=lcov -instr-profile <profdata> <binary>
 // (the same pipeline the macOS job uses).
 //
-// NOTE (first CI run must confirm): the exact xccov JSON shape was not
-// verifiable on the authoring Mac (no Xcode). If the primary path yields no
-// records, run the fallback and open an issue with the real shape.
+// NOTE (verified on CI, probe run 45723927053, Xcode 16.4): the xccov JSON
+// decodes exactly in this shape, but SwiftPM package targets register an
+// empty stub build product, so their `targets[]` entries have 0 files and
+// the package sources never appear under the app target either. Xcode's own
+// collection therefore cannot serve the package CRAP gate; the workflow
+// uses the llvm-cov fallback directly (profraw files collected from the app
+// container, `llvm-profdata merge`, one `llvm-cov export` per image). This
+// script stays the xccov reader for app-target-only coverage.
 
 import Foundation
 

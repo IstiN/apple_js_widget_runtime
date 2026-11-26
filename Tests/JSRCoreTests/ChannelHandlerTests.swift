@@ -78,6 +78,7 @@ import Foundation
 
     @Test func execRunsWhenAllowed() throws {
         let host = try TestHost.make(configuration: JSRConfiguration(allowsExec: true))
+#if os(macOS)
         try host.eval("jsr.exec('echo hello-apple').then(function(r){ console.log('out:' + r.stdout.trim()); });")
         // Process runs off-main; wait briefly for the completion
         let deadline = Date().addingTimeInterval(5)
@@ -87,6 +88,19 @@ import Foundation
         }
         host.registry.drain()
         #expect(host.recorder.consoleLines.contains("out:hello-apple"))
+#else
+        // iOS: Process does not exist, the runner answers the documented
+        // unsupported-host error (PROTOCOL.md section 5) even when exec is
+        // allowed by policy.
+        try host.eval("jsr.exec('echo hello-apple').catch(function(e){ console.log('caught:' + e.message); });")
+        let deadline = Date().addingTimeInterval(5)
+        while !host.recorder.consoleLines.contains(where: { $0.hasPrefix("caught:") }) && Date() < deadline {
+            host.registry.drain()
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        host.registry.drain()
+        #expect(host.recorder.consoleLines.contains("caught:exec is not supported by this host"))
+#endif
     }
 
     @Test func openUrlEmptyUrlRejects() throws {

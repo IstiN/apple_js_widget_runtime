@@ -61,6 +61,6 @@ schemes:
         - package: AppleJSWidgetRuntime/JSRUIKit
       environmentVariables:
         - variable: LLVM_PROFILE_FILE
-          value: /Users/runner/work/flutter_js_widget_runtime/flutter_js_widget_runtime/ios-cov-%p.profraw
+          value: "%t/ios-cov-%m.profraw"
       targets:
         - JSRUIKitTests
