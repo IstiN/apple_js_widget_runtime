@@ -59,8 +59,5 @@ schemes:
         - JSRUIDemo
         - package: AppleJSWidgetRuntime/JSRCore
         - package: AppleJSWidgetRuntime/JSRUIKit
-      environmentVariables:
-        - variable: LLVM_PROFILE_FILE
-          value: "%t/ios-cov-%m.profraw"
       targets:
         - JSRUIKitTests

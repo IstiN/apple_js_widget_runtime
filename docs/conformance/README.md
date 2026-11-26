@@ -63,9 +63,20 @@ The iOS leg runs in the `ios` job of the same workflow (macos-15 runner):
    `UIKitMapper` + `UIKitInteractionDriver` in the application window and
    writes the `ios` `result.json` files into the app container (`tmp/jsr-ios`).
 3. The job collects the results from `xcrun simctl get_app_container`, runs
-   the harness compare (artifact `conformance-ios`), converts the xccov
-   report with `scripts/xcresult-to-lcov.swift`, and gates crap4swift on
+   the harness compare (artifact `conformance-ios`), and gates crap4swift on
    `Sources/JSRCore Sources/JSRUIKit` with the iOS lcov (threshold 8.0).
+   Coverage comes from continuous-mode profile counters: Xcode overrides any
+   scheme `LLVM_PROFILE_FILE` and points the test host at its own
+   `%c`-continuous profraw path under `DARWIN_USER_TEMP_DIR` (probe evidence,
+   run 45727031194), so the counters survive the SIGKILL'd test host; the job
+   merges those profraws (`llvm-profdata merge -sparse`) and exports one lcov
+   per image (`llvm-cov export -format=lcov`: `JSRUIDemo.app/JSRUIDemo` and
+   `JSRUIKitTests.xctest/JSRUIKitTests`; one call per binary). Package code
+   is linked into both images with the counters split, so duplicate `SF:`
+   records are kept and the crap4swift parser merges them by summing the
+   execution counts per line. Xcode's own `xccov` collection is unusable for
+   this gate (probe run 45723927053: SwiftPM package targets register an
+   empty stub product, 0 files).
 
 Locally on the lane Mac only the syntax is verifiable:
 `xcrun swiftc -parse` over the UIKit/demo/test sources.

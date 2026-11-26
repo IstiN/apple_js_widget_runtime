@@ -48,9 +48,16 @@ swift build -c release --package-path .conformance/crap4swift
 iOS (`Quality` job `ios` only — needs Xcode + the iOS SDK, not available on
 the lane Mac): the job builds the `JSRUIDemo` demo project via XcodeGen
 (`xcodegen generate --spec Demo/iOS/project.yml`), runs `JSRUIKitTests` on the
-simulator with `-enableCodeCoverage YES`, converts the xcresult with
-`scripts/xcresult-to-lcov.swift` and gates crap4swift on
-`Sources/JSRCore Sources/JSRUIKit` with the iOS lcov file.
+simulator with `-enableCodeCoverage YES`, collects the continuous-mode
+profraws Xcode writes under `DARWIN_USER_TEMP_DIR` (Xcode overrides any
+scheme `LLVM_PROFILE_FILE`; `%c` continuous mode survives the SIGKILL'd test
+host), merges them and exports one lcov per image (`JSRUIDemo.app/JSRUIDemo`,
+`JSRUIKitTests.xctest/JSRUIKitTests` — duplicate `SF:` records from the two
+images are summed by the crap4swift parser), and gates crap4swift on
+`Sources/JSRCore Sources/JSRUIKit` with the iOS lcov file. Xcode's own
+`xccov` collection cannot serve the package gate (SwiftPM package targets
+register an empty stub product); `scripts/xcresult-to-lcov.swift` stays the
+xccov reader for app-target-only coverage.
 
 A missing or empty `coverage.lcov` fails the job. A function above 8.0 is
 split or gets more unit tests — the threshold is never raised and no function
