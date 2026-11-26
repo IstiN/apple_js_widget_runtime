@@ -54,10 +54,9 @@ schemes:
       config: Debug
     test:
       config: Debug
-      gatherCoverageData: true
-      coverageTargets:
-        - JSRUIDemo
-        - package: AppleJSWidgetRuntime/JSRCore
-        - package: AppleJSWidgetRuntime/JSRUIKit
+      gatherCoverageData: false
+      environmentVariables:
+        - variable: LLVM_PROFILE_FILE
+          value: "%t/ios-cov-%m.profraw"
       targets:
         - JSRUIKitTests

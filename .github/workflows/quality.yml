@@ -120,8 +120,16 @@ jobs:
       - name: xcodebuild test (iOS simulator, coverage)
         run: |
           set -o pipefail
+          # -enableCodeCoverage NO: Xcode's own collection overrides any
+          # scheme LLVM_PROFILE_FILE and DELETES its profraws after merging
+          # them into the xcresult (probe runs 45727031194/45728403596), and
+          # its xccov report carries 0 files for SwiftPM package targets
+          # (probe run 45723927053). The binaries are instrumented by the
+          # explicit flags below; the scheme env points the profile runtime
+          # at %t/ios-cov-%m.profraw (TMPDIR = app container tmp, %m =
+          # continuous mode, so the SIGKILL'd test host leaves the counters).
           xcodebuild test -project Demo/iOS/JSRUIDemo.xcodeproj -scheme JSRUIDemo \
-            -destination "platform=iOS Simulator,id=$IOS_UDID" -enableCodeCoverage YES \
+            -destination "platform=iOS Simulator,id=$IOS_UDID" -enableCodeCoverage NO \
             -resultBundlePath Coverage.xcresult \
             OTHER_SWIFT_FLAGS='-profile-generate -profile-coverage-mapping' \
             OTHER_LDFLAGS='-fprofile-instr-generate'
@@ -149,25 +157,22 @@ jobs:
       - name: Export LCOV coverage (iOS)
         run: |
           set -euo pipefail
-          # Xcode overrides any scheme LLVM_PROFILE_FILE: the test host runs
-          # with Xcode's own continuous-mode path under DARWIN_USER_TEMP_DIR
-          # (probe evidence, run 45727031194:
-          # /var/folders/.../T/dev.fa1.JSRUIDemo/<uuid>/<uuid>-%p%c.profraw).
-          # Continuous mode survives the SIGKILL'd test host, so the complete
-          # counters of every instrumented image are on disk. Xcode's own
-          # xccov collection cannot serve this gate: package targets register
-          # an empty stub product, so xccov reports 0 files for
-          # Sources/JSRCore|JSRUIKit (probe run 45723927053).
-          PROFRAW_LIST=$(find "$(getconf DARWIN_USER_TEMP_DIR)" -path "*dev.fa1.JSRUIDemo*" -name "*.profraw" 2>/dev/null | head -40 || true)
+          # With Xcode's collection off (-enableCodeCoverage NO), the scheme
+          # env LLVM_PROFILE_FILE applies: the profile runtime writes %m
+          # continuous-mode profraws to TMPDIR = the app container tmp
+          # (unique file per image), and the counters survive the SIGKILL'd
+          # test host. xccov cannot serve this gate anyway: package targets
+          # register an empty stub product, 0 files (probe run 45723927053).
+          CONTAINER=$(xcrun simctl get_app_container "$IOS_UDID" dev.fa1.JSRUIDemo data 2>/dev/null || true)
+          PROFRAW_LIST=$(find "$CONTAINER/tmp" -maxdepth 1 -name "ios-cov-*.profraw" 2>/dev/null | head -20 || true)
           if [ -z "$PROFRAW_LIST" ]; then
-            # fallback: the profile runtime also honours TMPDIR (the app
-            # sandbox tmp) when it can write there
-            CONTAINER=$(xcrun simctl get_app_container "$IOS_UDID" dev.fa1.JSRUIDemo data 2>/dev/null || true)
-            PROFRAW_LIST=$(find "$CONTAINER/tmp" -maxdepth 1 \( -name "ios-cov-*.profraw" -o -name "*.profraw" \) 2>/dev/null | head -20 || true)
-            echo "container fallback profraws: $PROFRAW_LIST"
+            PROFRAW_LIST=$(find "$(getconf DARWIN_USER_TEMP_DIR)" -path "*dev.fa1.JSRUIDemo*" -name "*.profraw" 2>/dev/null | head -40 || true)
+            echo "user temp dir fallback profraws: $PROFRAW_LIST"
           fi
           if [ -z "$PROFRAW_LIST" ]; then
-            echo "no profraws found; user temp dir state:" >&2
+            echo "no profraws found; container tmp state:" >&2
+            ls -la "$CONTAINER/tmp" 2>/dev/null | head -20 >&2 || true
+            echo "user temp dir state:" >&2
             find "$(getconf DARWIN_USER_TEMP_DIR)" -maxdepth 3 -name "*JSRUIDemo*" 2>/dev/null | head -10 >&2 || true
           fi
           echo "profraws: $PROFRAW_LIST"
