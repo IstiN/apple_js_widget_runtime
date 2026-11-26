@@ -533,20 +533,24 @@ public final class UIKitMapper: NSObject {
     func dumpNode(_ nodeId: String) -> [String: Any] {
         guard let record = records[nodeId] else { return [:] }
         var props = record.props
-        // live text-bearing props (the dump proves what is on screen)
-        if let view = views[nodeId] {
-            if let label = view as? UILabel, let text = label.text {
-                props["data"] = text
-            } else if let field = view as? UITextField, let text = field.text {
-                props["value"] = text
-            } else if let button = view as? UIButton, let title = button.title(for: .normal) {
-                props["data"] = title
-            }
-        }
+        mergeLiveText(of: nodeId, into: &props)
         let children = (childIds[nodeId] ?? []).compactMap { id -> [String: Any]? in
             views[id] != nil ? dumpNode(id) : nil
         }
         return record.withProps(props).jsonObject.merging(["children": children]) { _, new in new }
+    }
+
+    /// Live text-bearing props (the dump proves what is on screen): labels
+    /// and buttons report their on-screen text, fields their live value.
+    private func mergeLiveText(of nodeId: String, into props: inout [String: Any]) {
+        guard let view = views[nodeId] else { return }
+        if let label = view as? UILabel, let text = label.text {
+            props["data"] = text
+        } else if let field = view as? UITextField, let text = field.text {
+            props["value"] = text
+        } else if let button = view as? UIButton, let title = button.title(for: .normal) {
+            props["data"] = title
+        }
     }
 }
 #endif
