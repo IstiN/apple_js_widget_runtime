@@ -171,14 +171,14 @@ private struct UIKitTestHost {
         #expect(button?.title(for: .normal) == "button-label")
 
         host.mapper.updateProps(nodeId: "n3", props: ["backgroundColor": "#FF000080", "borderRadius": 8, "spacing": 5, "decoration": ["border": "1px solid #000"], "unknownProp": 1])
-        #expect(container?.layer?.backgroundColor != nil) // container color branch
-        #expect(container?.layer?.cornerRadius == 8)
-        _ = container?.layer?.borderWidth // decoration applied without crash
+        #expect(container?.layer.backgroundColor != nil) // container color branch
+        #expect(container?.layer.cornerRadius == 8)
+        _ = container?.layer.borderWidth // decoration applied without crash
 
         // invalid color leaves the view untouched (guard branch)
-        let before = container?.layer?.backgroundColor
+        let before = container?.layer.backgroundColor
         host.mapper.updateProps(nodeId: "n3", props: ["backgroundColor": "not-a-color"])
-        #expect(container?.layer?.backgroundColor == before)
+        #expect(container?.layer.backgroundColor == before)
 
         // stack spacing on a real column view (the root)
         host.mapper.updateProps(nodeId: "n0", props: ["spacing": 12])
