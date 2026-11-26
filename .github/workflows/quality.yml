@@ -183,14 +183,22 @@ jobs:
           echo "products: $DD"
           test -d "$DD"
           rm -f coverage-ios.lcov /tmp/raw-ios-*.lcov
+          # the app image plus every .xctest bundle in the products dir
+          # (flat iOS layout: <name>.xctest/<name>; dSYM dirs excluded)
+          BINS=("$DD/JSRUIDemo.app/JSRUIDemo")
+          while IFS= read -r x; do BINS+=("$x/$(basename "$x" .xctest)"); done < <(find "$DD" -maxdepth 3 -name "*.xctest" -not -path "*.dSYM*" 2>/dev/null | sort -u)
           i=0
-          for BIN in "$DD/JSRUIDemo.app/JSRUIDemo" "$DD/JSRUIKitTests.xctest/JSRUIKitTests"; do
+          for BIN in "${BINS[@]}"; do
             test -f "$BIN" || continue
             echo "exporting coverage from: $BIN"
             # one export per binary: a combined multi-binary export silently
             # drops the second binary's records
-            xcrun llvm-cov export -format=lcov -instr-profile Coverage-ios.profdata \
-              "$BIN" > "/tmp/raw-ios-$i.lcov" 2>/dev/null || true
+            if ! xcrun llvm-cov export -format=lcov -instr-profile Coverage-ios.profdata \
+                "$BIN" > "/tmp/raw-ios-$i.lcov" 2>/tmp/cov-err-$i.log; then
+              echo "llvm-cov export failed for $BIN:" >&2
+              head -5 "/tmp/cov-err-$i.log" >&2
+            fi
+            echo "  raw size: $(wc -c < "/tmp/raw-ios-$i.lcov") bytes"
             i=$((i+1))
           done
           echo "exported $i binaries"
