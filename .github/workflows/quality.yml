@@ -183,10 +183,18 @@ jobs:
           echo "products: $DD"
           test -d "$DD"
           rm -f coverage-ios.lcov /tmp/raw-ios-*.lcov
-          # the app image plus every .xctest bundle in the products dir
-          # (flat iOS layout: <name>.xctest/<name>; dSYM dirs excluded)
-          BINS=("$DD/JSRUIDemo.app/JSRUIDemo")
+          # SwiftPM products build as dynamic frameworks: the package code
+          # lives in PackageFrameworks/<X>_PackageProduct.framework/<X>
+          # (probe run 45730635846: the xctest bundle's own covmap carries
+          # only the test files — SF under /Tests/ — and the app binary has
+          # no coverage data with -enableCodeCoverage NO). Export every
+          # instrumented image that can hold package code: package framework
+          # executables plus every .xctest bundle (flat iOS layout,
+          # dSYM dirs excluded).
+          BINS=()
+          while IFS= read -r f; do BINS+=("$f/$(basename "$f" .framework)"); done < <(find "$DD" -maxdepth 4 -path "*PackageFrameworks*" -name "*.framework" -type d 2>/dev/null | sort -u)
           while IFS= read -r x; do BINS+=("$x/$(basename "$x" .xctest)"); done < <(find "$DD" -maxdepth 3 -name "*.xctest" -not -path "*.dSYM*" 2>/dev/null | sort -u)
+          echo "candidate binaries: ${#BINS[@]}"
           i=0
           for BIN in "${BINS[@]}"; do
             test -f "$BIN" || continue
@@ -210,6 +218,10 @@ jobs:
           cat /tmp/raw-ios-*.lcov \
             | awk 'BEGIN{keep=0} /^SF:/{keep=($0 ~ "^SF:.*/Sources/(JSRCore|JSRUIKit)/")} {if(keep)print}' \
             > coverage-ios.lcov
+          if [ ! -s coverage-ios.lcov ]; then
+            echo "no Sources/JSRCore|JSRUIKit records; sample of raw SF paths:" >&2
+            grep -h -m8 "^SF:" /tmp/raw-ios-*.lcov | head -8 >&2 || true
+          fi
           test -s coverage-ios.lcov
           grep -q "^SF:" coverage-ios.lcov
           echo "coverage-ios.lcov: $(grep -c '^SF:' coverage-ios.lcov) records"
