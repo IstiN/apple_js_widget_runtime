@@ -518,6 +518,10 @@ public final class UIKitMapper: NSObject {
                 view.topAnchor.constraint(equalTo: parent.topAnchor),
                 view.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
                 view.trailingAnchor.constraint(lessThanOrEqualTo: parent.trailingAnchor),
+                // A3 content height: a plain container has no intrinsic height;
+                // the parent must reach at least to the child's bottom or a
+                // scroll document collapses to zero contentSize.
+                parent.bottomAnchor.constraint(greaterThanOrEqualTo: view.bottomAnchor),
             ])
         }
     }
