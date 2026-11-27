@@ -41,9 +41,12 @@ public enum jsrAppKitDemo {
             runner.iid = "macos"
             let container = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 700))
             var mapper: AppKitMapper?
+            var firstDump: [String: Any]?
             runner.renderObserver = { payload in
                 try? mapper?.render(payloadJSON: payload)
+                if firstDump == nil, let mapper { firstDump = mapper.dump() } // A3: initial dump carries live scroll state
             }
+            runner.customInitialDump = { firstDump }
             runner.customFinalDump = { interaction in
                 (interaction as? AppKitInteractionDriver)?.mapper.dump()
             }

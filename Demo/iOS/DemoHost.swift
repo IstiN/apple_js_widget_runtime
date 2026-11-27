@@ -77,9 +77,12 @@ public enum jsrUIKitConformance {
             runner.iid = "ios"
             let container = UIView(frame: CGRect(x: 0, y: 0, width: 420, height: 700))
             var mapper: UIKitMapper?
+            var firstDump: [String: Any]?
             runner.renderObserver = { payload in
                 try? mapper?.render(payloadJSON: payload)
+                if firstDump == nil, let mapper { firstDump = mapper.dump() } // A3: initial dump carries live scroll state
             }
+            runner.customInitialDump = { firstDump }
             runner.customFinalDump = { interaction in
                 (interaction as? UIKitInteractionDriver)?.mapper.dump()
             }

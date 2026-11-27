@@ -280,6 +280,39 @@ private struct UIKitTestHost {
         #expect(order == ["c", "b", "a"])
     }
 
+    /// A3: the scroll node dumps live state (offset 0, extent >= viewport at
+    /// the start); three flick swipes really scroll the container to its end
+    /// (iOS job proof of the UIKit path).
+    @Test func scrollStateDumpedAndFlickReachesTheEnd() throws {
+        let host = try UIKitTestHost.make()
+        try host.engine.eval("""
+        jsr.render({type:'scroll',children:[{type:'column',children:[
+          {type:'container',padding:16,margin:6,children:[{type:'text',data:'row'}]},
+          {type:'container',padding:16,margin:6,children:[{type:'text',data:'row'}]},
+          {type:'container',padding:16,margin:6,children:[{type:'text',data:'row'}]},
+          {type:'container',padding:16,margin:6,children:[{type:'text',data:'row'}]},
+          {type:'container',padding:16,margin:6,children:[{type:'text',data:'row'}]}]}]});
+        """, sourceName: "<t>")
+        host.registry.drain()
+        let driver = UIKitInteractionDriver(mapper: host.mapper, runtime: host.runtime, registry: host.registry, engine: host.engine)
+        func scrollProps() -> [String: Any]? {
+            host.mapper.dump()["props"] as? [String: Any] // the scroll node is the root
+        }
+        let initial = scrollProps() ?? [:]
+        #expect((initial["scrollOffset"] as? NSNumber)?.doubleValue == 0)
+        #expect((initial["viewportExtent"] as? NSNumber)?.doubleValue ?? 0 > 0)
+        #expect((initial["scrollExtent"] as? NSNumber)?.doubleValue ?? 0 >= (initial["viewportExtent"] as? NSNumber)?.doubleValue ?? 1)
+
+        for _ in 0..<3 { driver.swipe(x1: 49, y1: 180, x2: 49, y2: 40, ms: 150) }
+        let final = scrollProps() ?? [:]
+        let offset = (final["scrollOffset"] as? NSNumber)?.doubleValue ?? 0
+        let extent = (final["scrollExtent"] as? NSNumber)?.doubleValue ?? 0
+        let viewport = (final["viewportExtent"] as? NSNumber)?.doubleValue ?? 0
+        #expect(offset > 0)
+        #expect(offset >= extent - viewport)       // scrolledToEnd
+        #expect(offset <= extent - viewport + 0.5) // clamped at the real range
+    }
+
     @Test func editableFieldInputDispatchesOnChanged() throws {
         let host = try UIKitTestHost.make()
         try host.engine.eval("""

@@ -100,6 +100,7 @@ public final class UIKitInteractionDriver: NSObject, InteractionDriver, UITextFi
     /// scroll wheel event; UIKit scrolls the enclosing UIScrollView directly).
     public func scroll(dx: Double, dy: Double) {
         guard let scrollView = enclosingScrollView() else { return }
+        mapper.container.layoutIfNeeded() // windowless hosts never run layout on their own
         let current = scrollView.contentOffset
         let maxOffsetX = max(0, scrollView.contentSize.width - scrollView.bounds.width)
         let maxOffsetY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
@@ -109,8 +110,9 @@ public final class UIKitInteractionDriver: NSObject, InteractionDriver, UITextFi
     }
 
     public func swipe(x1: Double, y1: Double, x2: Double, y2: Double, ms: Double) {
-        // touch-like drag: the content moves by the gesture delta
-        scroll(dx: x2 - x1, dy: y1 - y2)
+        // touch flick: the content carries the gesture delta plus the momentum
+        // coast (A3: the dumped scrollOffset reflects the real touch gesture)
+        scroll(dx: flickCarry(x2 - x1, ms: ms), dy: flickCarry(y1 - y2, ms: ms))
     }
 
     public func wait(ms: Double) {

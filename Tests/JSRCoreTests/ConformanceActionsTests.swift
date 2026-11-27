@@ -146,4 +146,15 @@ final class RecordingDriver: InteractionDriver {
         #expect(driver.currentTree() != nil)
         #expect(driver.input(node: "missing-node", value: "x") == false)
     }
+
+    /// A3 swipe semantics: the settled content move of a touch flick is the
+    /// gesture delta plus the momentum coast (v = delta/ms, rate 0.998/ms);
+    /// no duration means no coast.
+    @Test func flickCarryAddsTheMomentumCoast() {
+        #expect(flickCarry(140, ms: 150) > 140) // a flick carries further than its travel
+        let carry = flickCarry(140, ms: 150)
+        #expect(abs(carry - (140 + (140.0 / 150.0) * 0.998 / 0.002)) < 0.001)
+        #expect(flickCarry(60, ms: 0) == 60) // degenerate gesture: raw delta
+        #expect(flickCarry(-90, ms: 100) < -90) // upward flicks coast negative too
+    }
 }

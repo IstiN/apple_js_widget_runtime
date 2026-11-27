@@ -21,6 +21,19 @@ public protocol InteractionDriver: AnyObject {
     func back()
 }
 
+/// Settled content move of a touch flick (PROTOCOL A2/A3): the gesture delta
+/// plus the momentum coast of a finger moving `delta` px over `ms` — velocity
+/// v = delta/ms, normal deceleration 0.998 per ms coasts v*r/(1-r) beyond the
+/// gesture (the UIScrollView numbers). The AppKit and UIKit drivers apply
+/// their scroll through this, so the dumped `scrollOffset` reflects the real
+/// touch gesture, not just its raw travel.
+public func flickCarry(_ delta: Double, ms: Double) -> Double {
+    guard ms > 0 else { return delta }
+    let velocity = delta / ms // px per ms
+    let rate = 0.998
+    return delta + velocity * rate / (1 - rate)
+}
+
 /// Tree-level driver for the host conformance loop: finds the node in the
 /// current tree and dispatches the event — no views involved.
 public final class TreeInteractionDriver: InteractionDriver {
@@ -109,6 +122,11 @@ public final class ConformanceRunner {
     /// View-backed drivers can produce the FINAL dump from live views
     /// (text-bearing props read from the view, plan 1.3). nil → record-derived.
     public var customFinalDump: ((_ interaction: InteractionDriver) -> [String: Any]?)?
+    /// View-backed drivers can produce the INITIAL dump from live views too —
+    /// A3 scroll state must be present on every dump, and the record-derived
+    /// initial dump carries no scroll state. The provider returns the snapshot
+    /// captured at the first render; nil → record-derived.
+    public var customInitialDump: (() -> [String: Any]?)?
     /// Observes every `__jsr_render` payload (view mappers re-render from it).
     public var renderObserver: ((_ payloadJSON: String) -> Void)?
 
@@ -286,7 +304,7 @@ public final class ConformanceRunner {
 
     /// result.json per plan 1.4: PASS is set by the harness; the runner writes DONE/SKIP.
     private func finish(id: String, status: String, error: String? = nil, skippedReason: String? = nil, recorder: HostRecorder, fixtureDir: String, viewDriver: InteractionDriver? = nil) -> [String: Any] {
-        let dump = ConformanceRunner.initialDump(of: recorder)
+        let dump = customInitialDump?() ?? ConformanceRunner.initialDump(of: recorder)
         let finalDump = ConformanceRunner.finalDump(of: recorder, viewDriver: viewDriver, custom: customFinalDump)
 #if os(iOS)
         let platformName = "ios"

@@ -120,7 +120,57 @@ private func findScroll(in view: NSView) -> NSScrollView? {
             return total
         }
         #expect(countTexts(live) == 60)
-        #expect(JSON.valuesEqual(try host.derivedFinalDump(), live))
+        // A3: the live dump carries the scroll state the record-derived dump
+        // cannot have (it derives from the render payload); compare the rest.
+        func stripScrollState(_ node: [String: Any]) -> [String: Any] {
+            var out = node
+            if out["type"] as? String == "scroll", var props = out["props"] as? [String: Any] {
+                for key in ["scrollOffset", "scrollExtent", "viewportExtent"] { props.removeValue(forKey: key) }
+                out["props"] = props
+            }
+            out["children"] = (out["children"] as? [[String: Any]] ?? []).map(stripScrollState)
+            return out
+        }
+        #expect(JSON.valuesEqual(try host.derivedFinalDump(), stripScrollState(live)))
+        // and the scroll node itself carries the A3 state
+        func findScroll(_ node: [String: Any]) -> [String: Any]? {
+            if node["type"] as? String == "scroll" { return node }
+            for child in node["children"] as? [[String: Any]] ?? [] {
+                if let hit = findScroll(child) { return hit }
+            }
+            return nil
+        }
+        let scrollProps = findScroll(live)?["props"] as? [String: Any]
+        for key in ["scrollOffset", "scrollExtent", "viewportExtent"] {
+            #expect((scrollProps?[key] as? NSNumber)?.doubleValue != nil)
+        }
+    }
+
+    /// A3: the scroll node dumps live state (offset 0, extent >= viewport at
+    /// the start); three flick swipes really scroll the container to its end.
+    @Test func scrollStateDumpedAndFlickReachesTheEnd() throws {
+        let host = try AppKitTestHost.make(seed: "scroll_list")
+        let driver = AppKitInteractionDriver(mapper: host.mapper, runtime: host.runtime, registry: host.registry, engine: host.engine)
+        func scrollProps(of node: [String: Any]) -> [String: Any]? {
+            if node["type"] as? String == "scroll" { return node["props"] as? [String: Any] }
+            for child in node["children"] as? [[String: Any]] ?? [] {
+                if let hit = scrollProps(of: child) { return hit }
+            }
+            return nil
+        }
+        let initial = scrollProps(of: host.mapper.dump()) ?? [:]
+        #expect((initial["scrollOffset"] as? NSNumber)?.doubleValue == 0)
+        #expect((initial["viewportExtent"] as? NSNumber)?.doubleValue ?? 0 > 0)
+        #expect((initial["scrollExtent"] as? NSNumber)?.doubleValue ?? 0 >= (initial["viewportExtent"] as? NSNumber)?.doubleValue ?? 1)
+
+        for _ in 0..<3 { driver.swipe(x1: 49, y1: 180, x2: 49, y2: 40, ms: 150) }
+        let final = scrollProps(of: host.mapper.dump()) ?? [:]
+        let offset = (final["scrollOffset"] as? NSNumber)?.doubleValue ?? 0
+        let extent = (final["scrollExtent"] as? NSNumber)?.doubleValue ?? 0
+        let viewport = (final["viewportExtent"] as? NSNumber)?.doubleValue ?? 0
+        #expect(offset > 0)
+        #expect(offset >= extent - viewport)      // scrolledToEnd
+        #expect(offset <= extent - viewport + 0.5) // clamped at the real range
     }
 
     @Test func counterTapsPatchWithoutRebuild() throws {

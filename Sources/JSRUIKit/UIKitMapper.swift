@@ -534,10 +534,23 @@ public final class UIKitMapper: NSObject {
         guard let record = records[nodeId] else { return [:] }
         var props = record.props
         mergeLiveText(of: nodeId, into: &props)
+        mergeScrollState(of: nodeId, record: record, into: &props)
         let children = (childIds[nodeId] ?? []).compactMap { id -> [String: Any]? in
             views[id] != nil ? dumpNode(id) : nil
         }
         return record.withProps(props).jsonObject.merging(["children": children]) { _, new in new }
+    }
+
+    /// A3: live scroll state of a scrollable container (resolved type
+    /// `scroll`), read from the UIScrollView at dump time — offset =
+    /// `contentOffset.y`, extent = the full `contentSize.height`, viewport =
+    /// `bounds.height` (logical points, primary axis, ≥ 0).
+    private func mergeScrollState(of nodeId: String, record: WidgetNode, into props: inout [String: Any]) {
+        guard record.type == "scroll", let scrollView = views[nodeId] as? UIScrollView else { return }
+        container.layoutIfNeeded() // windowless hosts never run layout on their own
+        props["scrollOffset"] = scrollView.contentOffset.y
+        props["scrollExtent"] = scrollView.contentSize.height
+        props["viewportExtent"] = scrollView.bounds.height
     }
 
     /// Live text-bearing props (the dump proves what is on screen): labels

@@ -118,11 +118,14 @@ public final class AppKitInteractionDriver: NSObject, InteractionDriver, NSTextF
     }
 
     /// Clipped [dx, dy] move of the enclosing scroll view's clip bounds.
+    /// Windowless hosts never run layout on their own; the move forces one
+    /// pass so the document frame (and the clamp range) is real.
     private func applyScrollDelta(dx: Double, dy: Double) {
         guard let scrollView = enclosingScrollView() else { return }
+        mapper.container.layoutSubtreeIfNeeded()
         scrollView.reflectScrolledClipView(scrollView.contentView)
         let document = scrollView.documentView
-        let current = document?.frame.origin ?? .zero
+        let current = scrollView.contentView.bounds.origin // the real scroll position (the document stays constraint-pinned)
         let clip = scrollView.contentView
         let adjusted = NSPoint(x: current.x + dx, y: max(0, current.y + dy))
         clip.bounds.origin = adjusted
@@ -162,8 +165,9 @@ public final class AppKitInteractionDriver: NSObject, InteractionDriver, NSTextF
     }
 
     public func swipe(x1: Double, y1: Double, x2: Double, y2: Double, ms: Double) {
-        // touch-like drag: the content moves by the gesture delta (drag up scrolls down)
-        scroll(dx: x2 - x1, dy: y1 - y2)
+        // touch flick: the content carries the gesture delta plus the momentum
+        // coast (A3: the dumped scrollOffset reflects the real touch gesture)
+        scroll(dx: flickCarry(x2 - x1, ms: ms), dy: flickCarry(y1 - y2, ms: ms))
     }
 
     public func wait(ms: Double) {

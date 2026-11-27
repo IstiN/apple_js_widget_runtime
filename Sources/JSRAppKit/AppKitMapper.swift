@@ -556,6 +556,7 @@ public final class AppKitMapper: NSObject {
                 props["data"] = button.title
             }
         }
+        mergeScrollState(of: record, into: &props)
         return [
             "type": record.type,
             "props": props,
@@ -563,5 +564,21 @@ public final class AppKitMapper: NSObject {
             "children": (childIds[record.nodeId] ?? []).compactMap { records[$0].map(dumpNode) },
             "nodeId": record.nodeId,
         ]
+    }
+
+    /// A3: live scroll state of a scrollable container (resolved type
+    /// `scroll`), read from the NSScrollView at dump time — offset = the clip
+    /// view's origin, extent = the full document height, viewport = the
+    /// visible clip height (logical points, primary axis, ≥ 0). Windowless
+    /// hosts (the headless demo and tests) never run layout on their own, so
+    /// the read forces one pass first.
+    private func mergeScrollState(of record: WidgetNode, into props: inout [String: Any]) {
+        guard record.type == "scroll", let scrollView = views[record.nodeId] as? NSScrollView,
+              let document = scrollView.documentView else { return }
+        container.layoutSubtreeIfNeeded()
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        props["scrollOffset"] = scrollView.contentView.bounds.origin.y
+        props["scrollExtent"] = document.frame.height
+        props["viewportExtent"] = scrollView.contentView.bounds.height
     }
 }
