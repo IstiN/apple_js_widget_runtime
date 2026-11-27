@@ -1,0 +1,62 @@
+name: JSRUIDemo
+options:
+  bundleIdPrefix: dev.fa1
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+packages:
+  AppleJSWidgetRuntime:
+    path: ../..
+targets:
+  JSRUIDemo:
+    type: application
+    platform: iOS
+    sources:
+      - path: .
+        excludes:
+          - "project.yml"
+      - path: ../../.conformance/js_widget_runtime/docs/conformance/fixtures
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: AppleJSWidgetRuntime
+        products:
+          - JSRCore
+          - JSRUIKit
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        SWIFT_VERSION: "5.9"
+  JSRUIKitTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ../../Tests/JSRUIKitTests
+      - path: ../../Tests/JSRCoreTests
+    dependencies:
+      - target: JSRUIDemo
+      - package: AppleJSWidgetRuntime
+        products:
+          - JSRCore
+          - JSRUIKit
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.9"
+schemes:
+  JSRUIDemo:
+    build:
+      targets:
+        JSRUIDemo: all
+        JSRUIKitTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      environmentVariables:
+        - variable: LLVM_PROFILE_FILE
+          value: "%t/ios-cov-%m.profraw"
+      targets:
+        - JSRUIKitTests

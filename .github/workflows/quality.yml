@@ -1,0 +1,265 @@
+name: Quality
+
+on: [push, pull_request]
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch conformance pins
+        run: bash scripts/fetch-conformance.sh
+
+      - name: Bootstrap drift check
+        run: |
+          bash scripts/sync-bootstrap.sh
+          git diff --exit-code
+
+      - name: Swift tests with coverage
+        run: swift test --enable-code-coverage
+
+      - name: Export LCOV coverage
+        run: |
+          set -euo pipefail
+          # SwiftPM's build dir and test-bundle names differ per toolchain
+          # (.build/debug/JSRCoreTests.xctest locally, a single
+          # .build/<triple>/debug/<Package>PackageTests.xctest on CI Xcode) —
+          # discover every test executable and export per binary.
+          PROFDATA=$(find .build -path "*codecov/default.profdata" | head -1)
+          test -n "$PROFDATA"
+          xcrun llvm-profdata merge -sparse "$PROFDATA" -o Coverage.profdata
+          rm -f coverage.lcov /tmp/raw-*.lcov
+          COUNT=0
+          for BIN in $(find .build -type f -path "*/Contents/MacOS/*" | grep "\.xctest/" | grep -v "\.dSYM/" | sort -u); do
+            echo "exporting coverage from: $BIN"
+            # one export per binary: a combined multi-binary export silently
+            # drops the second binary's records
+            xcrun llvm-cov export -format=lcov -instr-profile Coverage.profdata \
+              "$BIN" > "/tmp/raw-$COUNT.lcov"
+            COUNT=$((COUNT+1))
+          done
+          echo "exported $COUNT binaries"
+          test "$COUNT" -gt 0
+          cat /tmp/raw-*.lcov \
+            | awk 'BEGIN{keep=0} /^SF:/{keep=($0 ~ "^SF:.*/Sources/(JSRCore|JSRAppKit)/")} {if(keep)print}' \
+            | awk '/^SF:/{p=$0; if(seen[p]){skip=1; next} seen[p]=1} {if(!skip)print} /^end_of_record/{skip=0}' \
+            > coverage.lcov
+          if [ ! -s coverage.lcov ]; then
+            echo "coverage.lcov missing or empty" >&2
+            exit 1
+          fi
+
+      - name: Build crap4swift (pinned)
+        run: swift build -c release --package-path .conformance/crap4swift
+
+      - name: CRAP gate (threshold 8.0)
+        run: .conformance/crap4swift/.build/release/crap4swift Sources/JSRCore Sources/JSRAppKit --coverage coverage.lcov --threshold 8.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Demo conformance run (macOS host)
+        run: |
+          swift build --product JSRAppKitDemo
+          rm -rf /tmp/apple-macos
+          .build/debug/JSRAppKitDemo --conformance .conformance/js_widget_runtime/docs/conformance/fixtures --out /tmp/apple-macos
+          test -s /tmp/apple-macos/hello.result.json
+          test -s /tmp/apple-macos/counter.result.json
+          test -s /tmp/apple-macos/scroll_list.result.json
+          test -s /tmp/apple-macos/l2_fetch_json.result.json
+
+      - name: Harness compare
+        run: |
+          # guard: the pinned harness exits 0 with an empty 0% score when the
+          # results dir holds no *.result.json (kit defect, fixed in wave D)
+          COUNT=$(ls -1 /tmp/apple-macos/*.result.json 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$COUNT" -lt 4 ]; then
+            echo "expected >= 4 *.result.json in /tmp/apple-macos, found $COUNT" >&2
+            exit 1
+          fi
+          node .conformance/js_widget_runtime/harness/harness.mjs compare \
+            --fixtures .conformance/js_widget_runtime/docs/conformance/fixtures \
+            --results /tmp/apple-macos \
+            --out-report /tmp/apple-macos-report.md
+          cat /tmp/apple-macos-report.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conformance-macos
+          path: |
+            /tmp/apple-macos/hello.result.json
+            /tmp/apple-macos/counter.result.json
+            /tmp/apple-macos/scroll_list.result.json
+            /tmp/apple-macos/l2_fetch_json.result.json
+            /tmp/apple-macos-report.md
+
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch conformance pins
+        run: bash scripts/fetch-conformance.sh
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate iOS demo project
+        run: xcodegen generate --spec Demo/iOS/project.yml
+
+      - name: Pick simulator destination
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -m1 "iPhone 16 (" | grep -oE "[A-F0-9]{8}-[A-F0-9-]{27}" || true)
+          if [ -z "$UDID" ]; then
+            UDID=$(xcrun simctl list devices available | grep -m1 "iPhone" | grep -oE "[A-F0-9]{8}-[A-F0-9-]{27}")
+          fi
+          echo "picked simulator UDID: $UDID"
+          test -n "$UDID"
+          echo "IOS_UDID=$UDID" >> "$GITHUB_ENV"
+
+      - name: xcodebuild test (iOS simulator, coverage)
+        run: |
+          set -o pipefail
+          # -enableCodeCoverage NO: Xcode's own collection overrides any
+          # scheme LLVM_PROFILE_FILE and DELETES its profraws after merging
+          # them into the xcresult (probe runs 45727031194/45728403596), and
+          # its xccov report carries 0 files for SwiftPM package targets
+          # (probe run 45723927053). The binaries are instrumented by the
+          # explicit flags below; the scheme env points the profile runtime
+          # at %t/ios-cov-%m.profraw (TMPDIR = app container tmp, %m =
+          # continuous mode, so the SIGKILL'd test host leaves the counters).
+          xcodebuild test -project Demo/iOS/JSRUIDemo.xcodeproj -scheme JSRUIDemo \
+            -destination "platform=iOS Simulator,id=$IOS_UDID" -enableCodeCoverage NO \
+            -resultBundlePath Coverage.xcresult \
+            OTHER_SWIFT_FLAGS='-profile-generate -profile-coverage-mapping' \
+            OTHER_LDFLAGS='-fprofile-instr-generate'
+
+      - name: Collect ios conformance results from the app container
+        run: |
+          mkdir -p /tmp/apple-ios
+          # the same UDID xcodebuild tested on; bootstatus boots it when
+          # xcodebuild shut it down after testing
+          xcrun simctl bootstatus "$IOS_UDID" -b
+          CONTAINER=$(xcrun simctl get_app_container "$IOS_UDID" dev.fa1.JSRUIDemo data 2>/dev/null || true)
+          echo "app container: $CONTAINER"
+          if [ -n "$CONTAINER" ] && [ -d "$CONTAINER/tmp/jsr-ios" ]; then
+            cp "$CONTAINER"/tmp/jsr-ios/*.result.json /tmp/apple-ios/
+          else
+            echo "container tmp listing:" >&2
+            ls "$CONTAINER/tmp" 2>&1 || true >&2
+            echo "no app container results at \$CONTAINER/tmp/jsr-ios" >&2
+            exit 1
+          fi
+          test -s /tmp/apple-ios/hello.result.json
+          test -s /tmp/apple-ios/counter.result.json
+          test -s /tmp/apple-ios/scroll_list.result.json
+          test -s /tmp/apple-ios/l2_fetch_json.result.json
+
+      - name: Export LCOV coverage (iOS)
+        run: |
+          set -euo pipefail
+          # With Xcode's collection off (-enableCodeCoverage NO), the scheme
+          # env LLVM_PROFILE_FILE applies: the profile runtime writes %m
+          # continuous-mode profraws to TMPDIR = the app container tmp
+          # (unique file per image), and the counters survive the SIGKILL'd
+          # test host. xccov cannot serve this gate anyway: package targets
+          # register an empty stub product, 0 files (probe run 45723927053).
+          CONTAINER=$(xcrun simctl get_app_container "$IOS_UDID" dev.fa1.JSRUIDemo data 2>/dev/null || true)
+          PROFRAW_LIST=$(find "$CONTAINER/tmp" -maxdepth 1 -name "ios-cov-*.profraw" 2>/dev/null | head -20 || true)
+          if [ -z "$PROFRAW_LIST" ]; then
+            PROFRAW_LIST=$(find "$(getconf DARWIN_USER_TEMP_DIR)" -path "*dev.fa1.JSRUIDemo*" -name "*.profraw" 2>/dev/null | head -40 || true)
+            echo "user temp dir fallback profraws: $PROFRAW_LIST"
+          fi
+          if [ -z "$PROFRAW_LIST" ]; then
+            echo "no profraws found; container tmp state:" >&2
+            ls -la "$CONTAINER/tmp" 2>/dev/null | head -20 >&2 || true
+            echo "user temp dir state:" >&2
+            find "$(getconf DARWIN_USER_TEMP_DIR)" -maxdepth 3 -name "*JSRUIDemo*" 2>/dev/null | head -10 >&2 || true
+          fi
+          echo "profraws: $PROFRAW_LIST"
+          test -n "$PROFRAW_LIST"
+          # shellcheck disable=SC2086
+          xcrun llvm-profdata merge -sparse $PROFRAW_LIST -o Coverage-ios.profdata
+          DD=$(find ~/Library/Developer/Xcode/DerivedData -maxdepth 1 -name "JSRUIDemo-*" | head -1)/Build/Products/Debug-iphonesimulator
+          echo "products: $DD"
+          test -d "$DD"
+          rm -f coverage-ios.lcov /tmp/raw-ios-*.lcov
+          # SwiftPM products build as dynamic frameworks: the package code
+          # lives in PackageFrameworks/<X>_PackageProduct.framework/<X>
+          # (probe run 45730635846: the xctest bundle's own covmap carries
+          # only the test files — SF under /Tests/ — and the app binary has
+          # no coverage data with -enableCodeCoverage NO). Export every
+          # instrumented image that can hold package code: package framework
+          # executables plus every .xctest bundle (flat iOS layout,
+          # dSYM dirs excluded).
+          BINS=()
+          while IFS= read -r f; do BINS+=("$f/$(basename "$f" .framework)"); done < <(find "$DD" -maxdepth 4 -path "*PackageFrameworks*" -name "*.framework" -type d 2>/dev/null | sort -u)
+          while IFS= read -r x; do BINS+=("$x/$(basename "$x" .xctest)"); done < <(find "$DD" -maxdepth 3 -name "*.xctest" -not -path "*.dSYM*" 2>/dev/null | sort -u)
+          echo "candidate binaries: ${#BINS[@]}"
+          i=0
+          for BIN in "${BINS[@]}"; do
+            test -f "$BIN" || continue
+            echo "exporting coverage from: $BIN"
+            # one export per binary: a combined multi-binary export silently
+            # drops the second binary's records
+            if ! xcrun llvm-cov export -format=lcov -instr-profile Coverage-ios.profdata \
+                "$BIN" > "/tmp/raw-ios-$i.lcov" 2>/tmp/cov-err-$i.log; then
+              echo "llvm-cov export failed for $BIN:" >&2
+              head -5 "/tmp/cov-err-$i.log" >&2
+            fi
+            echo "  raw size: $(wc -c < "/tmp/raw-ios-$i.lcov") bytes"
+            i=$((i+1))
+          done
+          echo "exported $i binaries"
+          test "$i" -gt 0
+          # Package code is linked into BOTH images with counters split
+          # between them; duplicate SF records are kept (never deduplicated
+          # by file) and the crap4swift parser merges them by summing the
+          # execution counts per line.
+          cat /tmp/raw-ios-*.lcov \
+            | awk 'BEGIN{keep=0} /^SF:/{keep=($0 ~ "^SF:.*/Sources/(JSRCore|JSRUIKit)/")} {if(keep)print}' \
+            > coverage-ios.lcov
+          if [ ! -s coverage-ios.lcov ]; then
+            echo "no Sources/JSRCore|JSRUIKit records; sample of raw SF paths:" >&2
+            grep -h -m8 "^SF:" /tmp/raw-ios-*.lcov | head -8 >&2 || true
+          fi
+          test -s coverage-ios.lcov
+          grep -q "^SF:" coverage-ios.lcov
+          echo "coverage-ios.lcov: $(grep -c '^SF:' coverage-ios.lcov) records"
+
+      - name: Build crap4swift (pinned)
+        run: swift build -c release --package-path .conformance/crap4swift
+
+      - name: CRAP gate on the iOS coverage (threshold 8.0)
+        run: .conformance/crap4swift/.build/release/crap4swift Sources/JSRCore Sources/JSRUIKit --coverage coverage-ios.lcov --threshold 8.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Harness compare (ios results)
+        run: |
+          # guard: the pinned harness exits 0 with an empty 0% score when the
+          # results dir holds no *.result.json (kit defect, fixed in wave D)
+          COUNT=$(ls -1 /tmp/apple-ios/*.result.json 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$COUNT" -lt 4 ]; then
+            echo "expected >= 4 *.result.json in /tmp/apple-ios, found $COUNT" >&2
+            exit 1
+          fi
+          node .conformance/js_widget_runtime/harness/harness.mjs compare \
+            --fixtures .conformance/js_widget_runtime/docs/conformance/fixtures \
+            --results /tmp/apple-ios \
+            --out-report /tmp/apple-ios-report.md
+          cat /tmp/apple-ios-report.md
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: conformance-ios
+          path: |
+            /tmp/apple-ios/
+            /tmp/apple-ios-report.md
+            coverage-ios.lcov
+          if-no-files-found: warn

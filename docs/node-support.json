@@ -1,0 +1,694 @@
+{
+  "platform": "macos",
+  "updatedAt": "2026-11-25",
+  "rows": [
+    {
+      "type": "column",
+      "status": "yes",
+      "ios": {
+        "status": "yes"
+      }
+    },
+    {
+      "type": "row",
+      "status": "yes",
+      "ios": {
+        "status": "yes"
+      }
+    },
+    {
+      "type": "stack",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "center",
+      "status": "yes",
+      "ios": {
+        "status": "yes"
+      }
+    },
+    {
+      "type": "align",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "expanded",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "flexible",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "wrap",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "padding",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "sizedBox",
+      "status": "yes",
+      "ios": {
+        "status": "yes"
+      }
+    },
+    {
+      "type": "spacer",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "safeArea",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "text",
+      "status": "yes",
+      "ios": {
+        "status": "yes"
+      }
+    },
+    {
+      "type": "icon",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "divider",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "circularProgressIndicator",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "linearProgressIndicator",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "container",
+      "status": "yes",
+      "ios": {
+        "status": "yes"
+      }
+    },
+    {
+      "type": "card",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "inkWell",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "scroll",
+      "status": "yes",
+      "ios": {
+        "status": "yes"
+      }
+    },
+    {
+      "type": "listView",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "gridView",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "adaptive",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "listTile",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "markdown",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "circleAvatar",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "chip",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "badge",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "switch",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "checkbox",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "slider",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "dropdown",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "button",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "textButton",
+      "status": "yes",
+      "ios": {
+        "status": "yes"
+      }
+    },
+    {
+      "type": "outlinedButton",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "iconButton",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "appBar",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "navigationBar",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "tabBar",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "fab",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "segmentedButton",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "radio",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "searchBar",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "tooltip",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "popupMenu",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "banner",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "bottomAppBar",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "bottomSheet",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "dialog",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "snackBar",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "navigationRail",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "carousel",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "image",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "svg",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "aspectRatio",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "opacity",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "clipRRect",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "textField",
+      "status": "partial",
+      "ios": {
+        "status": "yes"
+      }
+    },
+    {
+      "type": "textArea",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "chart",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "flChart",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "datePicker",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "timePicker",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "drawer",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "blur",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "animatedContainer",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "animatedOpacity",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "animatedPositioned",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "entrance",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "animatedSwitcher",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "gestureDetector",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "path",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "rect",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "circle",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "line",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "polygon",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "map",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "absoluteFill",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "fill",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "video",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "audio",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "audio_player",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "webView",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "scene3d",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "three",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    },
+    {
+      "type": "voxel",
+      "status": "partial",
+      "ios": {
+        "status": "partial",
+        "reason": "fallback"
+      }
+    }
+  ],
+  "ios": true
+}
