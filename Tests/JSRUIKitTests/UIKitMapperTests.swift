@@ -30,6 +30,7 @@ private struct UIKitTestHost {
         let runtime = JsWidgetRuntime(engine: engine)
         let timers = ManualTimerDriver()
         let container = UIView(frame: CGRect(x: 0, y: 0, width: 420, height: 700))
+        container.constrainToWindowSize(width: 420, height: 700) // windowless: real layout geometry for the A3 scroll state
         let mapper = UIKitMapper(container: container)
         weak var registryRef: ChannelRegistry?
         let hostTimers = Timers(driver: timers, evaluate: { script in

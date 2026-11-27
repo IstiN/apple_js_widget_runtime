@@ -566,4 +566,19 @@ public final class UIKitMapper: NSObject {
         }
     }
 }
+
+public extension UIView {
+    /// Windowless hosts (the demo conformance loop and the test host) hold the
+    /// mapper container in no window: with `translatesAutoresizingMaskIntoConstraints`
+    /// off, `layoutIfNeeded` collapses an unconstrained frame to zero. The
+    /// host states its surface size explicitly; the app path sizes the
+    /// container by its own constraints and is unaffected.
+    func constrainToWindowSize(width: CGFloat, height: CGFloat) {
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: width),
+            heightAnchor.constraint(equalToConstant: height),
+        ])
+    }
+}
 #endif

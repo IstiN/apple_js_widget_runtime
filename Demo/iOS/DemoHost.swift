@@ -76,6 +76,7 @@ public enum jsrUIKitConformance {
             let runner = ConformanceRunner(fixturesDir: fixtures, outDir: out)
             runner.iid = "ios"
             let container = UIView(frame: CGRect(x: 0, y: 0, width: 420, height: 700))
+            container.constrainToWindowSize(width: 420, height: 700) // windowless: real layout geometry for the A3 scroll state
             var mapper: UIKitMapper?
             var firstDump: [String: Any]?
             runner.renderObserver = { payload in
