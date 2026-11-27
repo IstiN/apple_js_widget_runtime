@@ -44,7 +44,12 @@ public final class ChannelRegistry {
     public let recorder = HostRecorder()
     private var handlers: [String: ChannelHandler] = [:]
     /// Promise resolutions queued "after the current job"; drained by the host loop.
+    /// Producers run on ANY thread (URLSession completions on the session's
+    /// delegate queue, MockHttp/timers on the caller's thread), so append and
+    /// drain take one lock — the single rule for every channel resolution
+    /// (review 2026-11-26, finding 4).
     private var resolutions: [(String, String)] = []
+    private let resolutionsLock = NSLock()
     private let services: HostServices
     private let timers: Timers
     private let configuration: JSRConfiguration
@@ -81,9 +86,16 @@ public final class ChannelRegistry {
     /// engine after the current job; JSC settles the promise chain inside.
     public func drain() {
         var rounds = 0
-        while !resolutions.isEmpty && rounds < 100 {
-            let batch = resolutions
+        while rounds < 100 {
+            let batch: [(String, String)]
+            resolutionsLock.lock()
+            if resolutions.isEmpty {
+                resolutionsLock.unlock()
+                break
+            }
+            batch = resolutions
             resolutions.removeAll()
+            resolutionsLock.unlock()
             for (id, value) in batch {
                 evaluate("__jsrResolve(\(JSON.stringify(id)), \(value))")
             }
@@ -94,7 +106,10 @@ public final class ChannelRegistry {
     // MARK: - wiring
 
     private lazy var resolveClosure: (String, String) -> Void = { [weak self] id, value in
-        self?.resolutions.append((id, value))
+        guard let self else { return }
+        self.resolutionsLock.lock()
+        self.resolutions.append((id, value))
+        self.resolutionsLock.unlock()
     }
 
     private func registerDefaults() {

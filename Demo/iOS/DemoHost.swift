@@ -8,6 +8,9 @@ import JSRUIKit
 // in the application window (conformance on iOS, platform "ios").
 
 public let jsrUIKitDemoSeeds = ["hello", "counter", "scroll_list"]
+/// The iOS conformance set: the seeds plus one L2 mock fixture, so the
+/// `__JSR_MOCK_ORIGIN__` path is exercised in CI (review 2026-11-26, finding 2).
+public let jsrUIKitConformanceFixtures = jsrUIKitDemoSeeds + ["l2_fetch_json"]
 
 public final class JSRUIKitDemoHost {
     public private(set) var windowTitle = "JSR UIKit Demo"
@@ -69,7 +72,7 @@ public enum jsrUIKitConformance {
         try? fm.createDirectory(atPath: out, withIntermediateDirectories: true)
         var lines: [String] = ["| Fixture | Level | Status | Diffs |"]
         var done = 0
-        for seed in jsrUIKitDemoSeeds {
+        for fixture in jsrUIKitConformanceFixtures {
             let runner = ConformanceRunner(fixturesDir: fixtures, outDir: out)
             runner.iid = "ios"
             let container = UIView(frame: CGRect(x: 0, y: 0, width: 420, height: 700))
@@ -80,7 +83,7 @@ public enum jsrUIKitConformance {
             runner.customFinalDump = { interaction in
                 (interaction as? UIKitInteractionDriver)?.mapper.dump()
             }
-            let result = try? runner.run(fixture: seed, driverFactory: { runtime, recorder, registry, engine in
+            let result = try? runner.run(fixture: fixture, driverFactory: { runtime, recorder, registry, engine in
                 let uiKitMapper = UIKitMapper(container: container)
                 uiKitMapper.onEvent = { [weak runtime] actionId, payloadJson in
                     try? runtime?.callEvent(actionId, payloadJson: payloadJson)
@@ -90,12 +93,12 @@ public enum jsrUIKitConformance {
             })
             done += 1
             let status = (result?["status"] as? String) ?? "DONE"
-            lines.append("| \(seed) | seed | \(status) | - |")
+            lines.append("| \(fixture) | \(jsrUIKitDemoSeeds.contains(fixture) ? "seed" : "L2") | \(status) | - |")
             if let error = result?["error"] as? String {
                 lines.append("  error: \(error)")
             }
         }
-        let report = "Ran \(done) seeds on iOS (simulator).\n" + lines.joined(separator: "\n")
+        let report = "Ran \(done) fixtures on iOS (simulator).\n" + lines.joined(separator: "\n")
         print(report)
         try? report.write(toFile: out + "/report.md", atomically: true, encoding: .utf8)
     }

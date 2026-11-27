@@ -134,11 +134,14 @@ private struct UIKitTestHost {
         // app container's tmp/jsr-ios so the CI job can collect them
         let out = NSTemporaryDirectory() + "jsr-ios"
         jsrUIKitConformance.run(fixtures: fixturesRoot(), out: out)
-        for seed in jsrUIKitDemoSeeds {
-            #expect(FileManager.default.fileExists(atPath: out + "/" + seed + ".result.json"))
+        for fixture in jsrUIKitConformanceFixtures {
+            #expect(FileManager.default.fileExists(atPath: out + "/" + fixture + ".result.json"))
         }
         let counter = try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: out + "/counter.result.json"))) as? [String: Any]
         #expect(counter?["platform"] as? String == "ios")
+        // the L2 mock fixture reaches its answer (review 2026-11-26, finding 2)
+        let l2 = try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: out + "/l2_fetch_json.result.json"))) as? [String: Any]
+        #expect(l2?["title"] as? String == "answer 42")
     }
 
     @Test func propPatchesExerciseEveryCanonicalApplier() throws {
@@ -248,6 +251,33 @@ private struct UIKitTestHost {
             return false
         })
         #expect(host.mapper.views["n1"] is UIView)
+    }
+
+    /// Review 2026-11-26, finding 1: a multi-move reorder patches the live
+    /// view order to the new payload order (§2.3 children in order).
+    @Test func multiMoveReorderPatchesTheLiveViewOrder() throws {
+        let host = try UIKitTestHost.make()
+        try host.engine.eval("""
+        jsr.render({type:'column',children:[
+          {type:'text',data:'a',key:'a'},{type:'text',data:'b',key:'b'},{type:'text',data:'c',key:'c'}]});
+        """, sourceName: "<t>")
+        host.registry.drain()
+        host.mapper.lastOperations.removeAll()
+        try host.engine.eval("""
+        jsr.render({type:'column',children:[
+          {type:'text',data:'c',key:'c'},{type:'text',data:'b',key:'b'},{type:'text',data:'a',key:'a'}]});
+        """, sourceName: "<t>")
+        host.registry.drain()
+        let moves = host.mapper.lastOperations.filter { op in
+            if case .moveChild = op { return true }
+            return false
+        }
+        #expect(moves.count >= 2)
+        // the applied view order equals the new payload order
+        let dump = host.mapper.dump()
+        let children = (dump["children"] as? [[String: Any]]) ?? []
+        let order = children.compactMap { ($0["props"] as? [String: Any])?["data"] as? String }
+        #expect(order == ["c", "b", "a"])
     }
 
     @Test func editableFieldInputDispatchesOnChanged() throws {

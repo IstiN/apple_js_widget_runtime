@@ -8,6 +8,10 @@ import JSRCore
 
 public enum jsrAppKitDemo {
     public static let seeds = ["hello", "counter", "scroll_list"]
+    /// The headless conformance set: the seeds plus one L2 mock fixture, so
+    /// the `__JSR_MOCK_ORIGIN__` path is exercised in CI (review 2026-11-26,
+    /// finding 2).
+    public static let conformanceFixtures = seeds + ["l2_fetch_json"]
 
     public enum Mode {
         case conformance(fixtures: String, out: String)
@@ -32,7 +36,7 @@ public enum jsrAppKitDemo {
         try? FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
         var lines: [String] = ["| Fixture | Level | Status | Diffs |"]
         var done = 0
-        for seed in seeds {
+        for fixture in conformanceFixtures {
             let runner = ConformanceRunner(fixturesDir: fixtures, outDir: out)
             runner.iid = "macos"
             let container = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 700))
@@ -43,7 +47,7 @@ public enum jsrAppKitDemo {
             runner.customFinalDump = { interaction in
                 (interaction as? AppKitInteractionDriver)?.mapper.dump()
             }
-            let result = try? runner.run(fixture: seed, driverFactory: { runtime, recorder, registry, engine in
+            let result = try? runner.run(fixture: fixture, driverFactory: { runtime, recorder, registry, engine in
                 let appKitMapper = AppKitMapper(container: container)
                 appKitMapper.onEvent = { actionId, payloadJson in
                     try? runtime.callEvent(actionId, payloadJson: payloadJson)
@@ -53,12 +57,12 @@ public enum jsrAppKitDemo {
             })
             done += 1
             let status = (result?["status"] as? String) ?? "DONE"
-            lines.append("| \(seed) | seed | \(status) | - |")
+            lines.append("| \(fixture) | \(seeds.contains(fixture) ? "seed" : "L2") | \(status) | - |")
             if let error = result?["error"] as? String {
                 lines.append("  error: \(error)")
             }
         }
-        lines.append("Ran \(done) seeds on macOS; verdicts come from jsr-harness compare.")
+        lines.append("Ran \(done) fixtures on macOS; verdicts come from jsr-harness compare.")
         let report = lines.joined(separator: "\n")
         print(report)
         try? report.write(toFile: out + "/report.md", atomically: true, encoding: .utf8)

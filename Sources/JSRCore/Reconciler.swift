@@ -11,7 +11,11 @@ public enum PatchOperation {
     case updateProps(nodeId: String, props: [String: Any])
     case insertChild(parentNodeId: String, index: Int, node: WidgetNode)
     case removeChild(parentNodeId: String, index: Int)
-    /// `from` is the index in the old child list, `to` the index in the new list.
+    /// `from` and `to` are indices into the child list AS THE OPERATIONS
+    /// BEFORE THIS ONE HAVE LEFT IT — the list the mapper holds when it
+    /// applies this op (remove at `from`, insert at `to`), NOT indices into
+    /// the old child list. The reconciler simulates that list while emitting,
+    /// so the whole sequence applied in order lands exactly on the new order.
     case moveChild(parentNodeId: String, from: Int, to: Int)
     case replaceSubtree(nodeId: String, node: WidgetNode)
 }
@@ -44,10 +48,8 @@ public enum Reconciler {
         if !changed.isEmpty {
             operations.append(.updateProps(nodeId: old.nodeId, props: changed))
         }
-        var matchedOld = Set<Int>()
         var retainedChildren: [WidgetNode] = []
-        pairChildren(old, new, into: &operations, matchedOld: &matchedOld, retained: &retainedChildren)
-        removeUnmatchedChildren(old, matchedOld: matchedOld, into: &operations)
+        pairChildren(old, new, into: &operations, retained: &retainedChildren)
         return (operations, new.withChildren(retainedChildren).withNodeId(old.nodeId))
     }
 
@@ -69,54 +71,74 @@ public enum Reconciler {
         return changed
     }
 
-    /// Children paired by identity: same position first, then elsewhere (move),
-    /// else the old child at the cursor is replaced, else inserted at the end.
-    /// `retained` collects the reconciled children in the NEW order.
-    private static func pairChildren(_ old: WidgetNode, _ new: WidgetNode, into operations: inout [PatchOperation], matchedOld: inout Set<Int>, retained: inout [WidgetNode]) {
-        var cursor = 0 // next old child expected at the same position
-        for (newIndex, newChild) in new.children.enumerated() {
-            let newIdentity = identity(newChild)
-            if cursor < old.children.count, identity(old.children[cursor]) == newIdentity {
-                matchedOld.insert(cursor)
-                append(reconcileMapped(old.children[cursor], newChild), into: &operations, retained: &retained)
-                cursor += 1
-                continue
-            }
-            if let oldIndex = movedMatch(newIdentity, in: old.children, matched: matchedOld) {
-                matchedOld.insert(oldIndex)
-                operations.append(.moveChild(parentNodeId: old.nodeId, from: oldIndex, to: newIndex))
-                append(reconcileMapped(old.children[oldIndex], newChild), into: &operations, retained: &retained)
-            } else if cursor < old.children.count {
-                // the old child at the cursor is gone from the new tree: replace it
-                matchedOld.insert(cursor)
-                operations.append(.replaceSubtree(nodeId: old.children[cursor].nodeId, node: newChild))
-                retained.append(newChild) // fresh id: the mapper registers it
-                cursor += 1
-            } else {
-                operations.append(.insertChild(parentNodeId: old.nodeId, index: newIndex, node: newChild))
-                retained.append(newChild)
-            }
+    /// Children: each new child is placed at its final index of the mapper's
+    /// CURRENT child list. The reconciler simulates that list (`working`)
+    /// while emitting — every move/insert/remove index is valid at its point
+    /// of application, so a mapper that applies the operations in order
+    /// (remove at `from`, insert at `to`, …) lands exactly on the new order.
+    /// Multi-move reorders ([A,B,C] → [C,B,A]) and move+remove batches stay
+    /// consistent (review 2026-11-26, finding 1). `retained` collects the
+    /// reconciled children in the NEW order.
+    private static func pairChildren(_ old: WidgetNode, _ new: WidgetNode, into operations: inout [PatchOperation], retained: inout [WidgetNode]) {
+        var working: [(node: WidgetNode, consumed: Bool)] = old.children.map { ($0, false) }
+        for newIndex in new.children.indices {
+            place(new.children[newIndex], at: newIndex, working: &working,
+                  parentNodeId: old.nodeId, into: &operations, retained: &retained)
+        }
+        removeLeftovers(working, parentNodeId: old.nodeId, into: &operations)
+    }
+
+    /// One new child at its final index: in place, moved, replaced, or inserted.
+    private static func place(_ newChild: WidgetNode, at newIndex: Int, working: inout [(node: WidgetNode, consumed: Bool)], parentNodeId: String, into operations: inout [PatchOperation], retained: inout [WidgetNode]) {
+        let newIdentity = identity(newChild)
+        if matchInPlace(newChild, at: newIndex, identity: newIdentity, working: &working, into: &operations, retained: &retained) { return }
+        if moveIntoPlace(newChild, at: newIndex, identity: newIdentity, working: &working, parentNodeId: parentNodeId, into: &operations, retained: &retained) { return }
+        insertOrReplace(newChild, at: newIndex, working: &working, parentNodeId: parentNodeId, into: &operations, retained: &retained)
+    }
+
+    /// The child is already at its new position: consume it in place (no op).
+    private static func matchInPlace(_ newChild: WidgetNode, at newIndex: Int, identity newIdentity: String, working: inout [(node: WidgetNode, consumed: Bool)], into operations: inout [PatchOperation], retained: inout [WidgetNode]) -> Bool {
+        guard newIndex < working.count, !working[newIndex].consumed, identity(working[newIndex].node) == newIdentity else { return false }
+        working[newIndex].consumed = true
+        append(reconcileMapped(working[newIndex].node, newChild), into: &operations, retained: &retained)
+        return true
+    }
+
+    /// First unconsumed child at or after `newIndex` with this identity moves
+    /// to `newIndex`; `from` is the CURRENT list index (mapper index space).
+    private static func moveIntoPlace(_ newChild: WidgetNode, at newIndex: Int, identity newIdentity: String, working: inout [(node: WidgetNode, consumed: Bool)], parentNodeId: String, into operations: inout [PatchOperation], retained: inout [WidgetNode]) -> Bool {
+        guard let from = working.indices.first(where: { $0 >= newIndex && !working[$0].consumed && identity(working[$0].node) == newIdentity }) else { return false }
+        working.insert(working.remove(at: from), at: newIndex)
+        working[newIndex].consumed = true
+        operations.append(.moveChild(parentNodeId: parentNodeId, from: from, to: newIndex))
+        append(reconcileMapped(working[newIndex].node, newChild), into: &operations, retained: &retained)
+        return true
+    }
+
+    /// The identity is gone from the new tree: the leftover at the slot is
+    /// replaced in place; past the end the child is inserted.
+    private static func insertOrReplace(_ newChild: WidgetNode, at newIndex: Int, working: inout [(node: WidgetNode, consumed: Bool)], parentNodeId: String, into operations: inout [PatchOperation], retained: inout [WidgetNode]) {
+        if newIndex < working.count {
+            operations.append(.replaceSubtree(nodeId: working[newIndex].node.nodeId, node: newChild))
+            working[newIndex] = (newChild, true)
+            retained.append(newChild) // fresh id: the mapper registers it
+        } else {
+            operations.append(.insertChild(parentNodeId: parentNodeId, index: newIndex, node: newChild))
+            working.append((newChild, true))
+            retained.append(newChild)
+        }
+    }
+
+    /// Children the new tree does not contain, removed in descending CURRENT
+    /// positions so each removal is valid after the ones before it.
+    private static func removeLeftovers(_ working: [(node: WidgetNode, consumed: Bool)], parentNodeId: String, into operations: inout [PatchOperation]) {
+        for index in working.indices.reversed() where !working[index].consumed {
+            operations.append(.removeChild(parentNodeId: parentNodeId, index: index))
         }
     }
 
     private static func append(_ result: (operations: [PatchOperation], retained: WidgetNode), into operations: inout [PatchOperation], retained: inout [WidgetNode]) {
         operations.append(contentsOf: result.operations)
         retained.append(result.retained)
-    }
-
-    /// Remaining unmatched old children are removed (descending index order).
-    private static func removeUnmatchedChildren(_ old: WidgetNode, matchedOld: Set<Int>, into operations: inout [PatchOperation]) {
-        for index in old.children.indices.filter({ !matchedOld.contains($0) }).reversed() {
-            operations.append(.removeChild(parentNodeId: old.nodeId, index: index))
-        }
-    }
-
-    /// First unmatched old child (outside the cursor) with this identity.
-    private static func movedMatch(_ identity: String, in children: [WidgetNode], matched: Set<Int>) -> Int? {
-        for (oldIndex, oldChild) in children.enumerated()
-        where !matched.contains(oldIndex) && self.identity(oldChild) == identity {
-            return oldIndex
-        }
-        return nil
     }
 }

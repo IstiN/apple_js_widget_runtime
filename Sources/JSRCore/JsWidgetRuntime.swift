@@ -24,7 +24,7 @@ public final class JsWidgetRuntime {
         let bundle = Bundle.module
         let runtimeHalf = try String(contentsOf: bundle.url(forResource: "bootstrap-runtime", withExtension: "js")!, encoding: .utf8)
         let widgetHalf = try String(contentsOf: bundle.url(forResource: "bootstrap-widget", withExtension: "js")!, encoding: .utf8)
-        try engine.eval("var __IID = \"\(iid)\";", sourceName: "<iid>")
+        try engine.eval("var __IID = \(JSON.stringify(iid));", sourceName: "<iid>")
         try engine.eval(runtimeHalf, sourceName: "bootstrap-runtime.js")
         try engine.eval(widgetHalf, sourceName: "bootstrap-widget.js")
     }
@@ -33,13 +33,13 @@ public final class JsWidgetRuntime {
     /// Contract-identical to the Flutter/Android dispatch snippet; drains pending
     /// jobs afterwards (promise handlers run before the host continues).
     public func callEvent(_ actionId: String, payloadJson: String = "{}") throws {
-        let escapedAction = actionId.replacingOccurrences(of: "\"", with: "\\\"")
+        // JSON.stringify escapes quotes AND backslashes (review 2026-11-26, finding 6)
         let script = """
         (function(){
           var __h = jsr._handler || (typeof handleEvent === "function" ? handleEvent : null);
           if (!__h) { return; }
           try {
-            var __r = __h("\(escapedAction)", \(payloadJson));
+            var __r = __h(\(JSON.stringify(actionId)), \(payloadJson));
             if (__r && typeof __r.then === "function") { __r.then(function(){}, function(e){}); }
           } catch (e) {}
         })();

@@ -47,6 +47,22 @@ import Foundation
         #expect(FileManager.default.fileExists(atPath: outDir + "/counter.result.json"))
     }
 
+    /// Review 2026-11-26, finding 2: `__JSR_MOCK_ORIGIN__` is injected before
+    /// the widget, so the pinned mock fixture reaches `answer 42` on the host.
+    @Test func l2FetchJsonReachesTheMockAnswer() throws {
+        let result = try runFixture("l2_fetch_json")
+        #expect(result["status"] as? String == "DONE")
+        #expect(result["title"] as? String == "answer 42")
+        #expect((result["renders"] as? [String])?.count == 1)
+        let trace = result["trace"] as? [String] ?? []
+        #expect(trace.contains("fetch"))
+        #expect(trace.contains("set_title"))
+        let finalDump = result["finalDump"] as? [String: Any]
+        let children = finalDump?["children"] as? [[String: Any]]
+        let column = children?.first?["children"] as? [[String: Any]]
+        #expect((column?.first?["props"] as? [String: Any])?["data"] as? String == "answer 42")
+    }
+
     @Test func unsupportedCapabilitySkipsWithReason() throws {
         // Build a one-off fixture directory with a capability the host lacks.
         let root = NSTemporaryDirectory() + "jsr-skip-fixture-\(UUID().uuidString)"

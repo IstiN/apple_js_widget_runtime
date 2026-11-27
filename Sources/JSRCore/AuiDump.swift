@@ -124,7 +124,7 @@ public enum AuiDump {
         mergePropsAndStyle(working, dict, into: &props, events: &events)
         let identityKey = working["key"] as? String // rule 4: consumed, never dumped
         return WidgetNode(type: working["type"] as? String ?? rawType, props: props, events: events,
-                          children: rawChildren(working).map(toChild), nodeId: "", identityKey: identityKey)
+                          children: try rawChildren(working).map(toChild), nodeId: "", identityKey: identityKey)
     }
 
     /// working map: normalized props first, then top-level keys (node keys win).
@@ -166,11 +166,15 @@ public enum AuiDump {
         }
     }
 
-    static func toChild(_ child: Any) -> WidgetNode {
+    /// Behavior-identical with the pinned harness `toChild` (normalize.mjs):
+    /// a string child becomes a text node; a malformed child (non-object, or
+    /// object without string `type`) THROWS — never coerced into a phantom
+    /// node that would mask a renderer/widget bug (review 2026-11-26, finding 5).
+    static func toChild(_ child: Any) throws -> WidgetNode {
         if let string = child as? String {
-            return (try? buildNode(["type": "text", "data": string])) ?? WidgetNode(type: "text", props: [:], events: [:], children: [], nodeId: "")
+            return try buildNode(["type": "text", "data": string])
         }
-        return (try? buildNode(child)) ?? WidgetNode(type: "text", props: [:], events: [:], children: [], nodeId: "")
+        return try buildNode(child)
     }
 
     static func resolveTypeAlias(_ raw: String) -> String {

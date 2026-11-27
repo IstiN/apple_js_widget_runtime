@@ -145,4 +145,71 @@ import Foundation
         }
         #expect((props["events"] as? [String: String])?["onTap"] == "a9")
     }
+
+    // MARK: multi-move reorder (review 2026-11-26, finding 1)
+
+    /// Applies operations to a child-id list EXACTLY like the mappers do:
+    /// remove at the index, insert at the index, replace swaps the id in
+    /// place. The ops must therefore carry CURRENT-list indices.
+    private func applyLikeMappers(_ operations: [PatchOperation], to ids: inout [String]) {
+        for operation in operations {
+            switch operation {
+            case .moveChild(_, let from, let to):
+                let id = ids.remove(at: from)
+                ids.insert(id, at: min(to, ids.count))
+            case .insertChild(_, let index, let node):
+                ids.insert(node.nodeId, at: min(index, ids.count))
+            case .removeChild(_, let index):
+                ids.remove(at: index)
+            case .replaceSubtree(let nodeId, let node):
+                if let position = ids.firstIndex(of: nodeId) { ids[position] = node.nodeId }
+            case .updateProps:
+                break
+            }
+        }
+    }
+
+    private func keyedColumn(_ keys: [String]) -> WidgetNode {
+        let children = keys.map { key in
+            "{\"type\":\"text\",\"key\":\"\(key)\",\"data\":\"\(key)\"}"
+        }.joined(separator: ",")
+        return tree("{\"type\":\"column\",\"children\":[\(children)]}")
+    }
+
+    /// The reviewer's counterexample: [A,B,C] → [C,B,A] used to desync the
+    /// index spaces and end [C,A,B]. Ops applied in mapper order must produce
+    /// exactly the retained order (matched nodes keep their old ids), whose
+    /// identity sequence is the new payload order.
+    @Test func threeChildReverseEndsInTheNewOrder() {
+        let old = keyedColumn(["a", "b", "c"])
+        let new = keyedColumn(["c", "b", "a"])
+        let result = Reconciler.reconcileMapped(old, new)
+        let moves = result.operations.filter { if case .moveChild = $0 { return true }; return false }
+        #expect(moves.count >= 2, "at least two moves in one diff, got \(result.operations)")
+        var ids = old.children.map(\.nodeId)
+        applyLikeMappers(result.operations, to: &ids)
+        #expect(ids == result.retained.children.map(\.nodeId))
+        #expect(result.retained.children.map(Reconciler.identity) == ["c", "b", "a"])
+    }
+
+    /// A longer reorder (4-child reversal) plus a move+remove batch: the
+    /// simulated mapper list still lands on the new order.
+    @Test func fourChildReverseAndMoveWithRemovalsStayConsistent() {
+        let reverseOld = keyedColumn(["a", "b", "c", "d"])
+        let reverseNew = keyedColumn(["d", "c", "b", "a"])
+        let reverse = Reconciler.reconcileMapped(reverseOld, reverseNew)
+        var ids = reverseOld.children.map(\.nodeId)
+        applyLikeMappers(reverse.operations, to: &ids)
+        #expect(ids == reverse.retained.children.map(\.nodeId))
+        #expect(reverse.retained.children.map(Reconciler.identity) == ["d", "c", "b", "a"])
+
+        // move the two survivors to the front, then remove the two leftovers
+        let shrinkOld = keyedColumn(["a", "b", "c", "d"])
+        let shrinkNew = keyedColumn(["c", "d"])
+        let shrink = Reconciler.reconcileMapped(shrinkOld, shrinkNew)
+        var shrinkIds = shrinkOld.children.map(\.nodeId)
+        applyLikeMappers(shrink.operations, to: &shrinkIds)
+        #expect(shrinkIds == shrink.retained.children.map(\.nodeId))
+        #expect(shrink.retained.children.map(Reconciler.identity) == ["c", "d"])
+    }
 }

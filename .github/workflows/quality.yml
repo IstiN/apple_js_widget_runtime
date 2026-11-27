@@ -68,14 +68,15 @@ jobs:
           test -s /tmp/apple-macos/hello.result.json
           test -s /tmp/apple-macos/counter.result.json
           test -s /tmp/apple-macos/scroll_list.result.json
+          test -s /tmp/apple-macos/l2_fetch_json.result.json
 
       - name: Harness compare
         run: |
           # guard: the pinned harness exits 0 with an empty 0% score when the
           # results dir holds no *.result.json (kit defect, fixed in wave D)
           COUNT=$(ls -1 /tmp/apple-macos/*.result.json 2>/dev/null | wc -l | tr -d ' ')
-          if [ "$COUNT" -lt 3 ]; then
-            echo "expected >= 3 *.result.json in /tmp/apple-macos, found $COUNT" >&2
+          if [ "$COUNT" -lt 4 ]; then
+            echo "expected >= 4 *.result.json in /tmp/apple-macos, found $COUNT" >&2
             exit 1
           fi
           node .conformance/js_widget_runtime/harness/harness.mjs compare \
@@ -91,6 +92,7 @@ jobs:
             /tmp/apple-macos/hello.result.json
             /tmp/apple-macos/counter.result.json
             /tmp/apple-macos/scroll_list.result.json
+            /tmp/apple-macos/l2_fetch_json.result.json
             /tmp/apple-macos-report.md
 
   ios:
@@ -153,6 +155,7 @@ jobs:
           test -s /tmp/apple-ios/hello.result.json
           test -s /tmp/apple-ios/counter.result.json
           test -s /tmp/apple-ios/scroll_list.result.json
+          test -s /tmp/apple-ios/l2_fetch_json.result.json
 
       - name: Export LCOV coverage (iOS)
         run: |
@@ -241,8 +244,8 @@ jobs:
           # guard: the pinned harness exits 0 with an empty 0% score when the
           # results dir holds no *.result.json (kit defect, fixed in wave D)
           COUNT=$(ls -1 /tmp/apple-ios/*.result.json 2>/dev/null | wc -l | tr -d ' ')
-          if [ "$COUNT" -lt 3 ]; then
-            echo "expected >= 3 *.result.json in /tmp/apple-ios, found $COUNT" >&2
+          if [ "$COUNT" -lt 4 ]; then
+            echo "expected >= 4 *.result.json in /tmp/apple-ios, found $COUNT" >&2
             exit 1
           fi
           node .conformance/js_widget_runtime/harness/harness.mjs compare \

@@ -130,4 +130,20 @@ import Foundation
         #expect(child.type == "text")
         #expect((child.props["data"] as? String) == "plain")
     }
+
+    /// Review 2026-11-26, finding 5: a malformed child throws like the pinned
+    /// harness (`normalize.mjs toChild` → `buildNode(child)` unguarded), it is
+    /// never coerced into a phantom empty text node.
+    @Test func malformedChildrenThrowLikeTheReference() {
+        #expect(throws: AuiDumpError.notANodeObject) {
+            try AuiDump.normalizeTree(payloadJSON: #"{"type":"column","children":[5]}"#)
+        }
+        #expect(throws: AuiDumpError.missingStringType) {
+            try AuiDump.normalizeTree(payloadJSON: #"{"type":"column","child":{"data":"no type"}}"#)
+        }
+        // the string-child path keeps working (a plain string is a legal child)
+        #expect(throws: Never.self) {
+            try AuiDump.normalizeTree(payloadJSON: #"{"type":"column","children":["ok"]}"#)
+        }
+    }
 }

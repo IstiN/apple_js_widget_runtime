@@ -193,6 +193,10 @@ public final class ConformanceRunner {
                     self?.renderObserver?(payload)
                 }
             }, iid: iid)
+            // PROTOCOL §3.4: the mock-origin global exists before the widget
+            // runs; the Apple host resolves mocks by path (MockHttp.lookup),
+            // so a sentinel origin is enough (review 2026-11-26, finding 2).
+            try booted.engine.eval("var __JSR_MOCK_ORIGIN__ = \"http://jsr.local\";", sourceName: "<mock-origin>")
             try booted.engine.eval(files.widget, sourceName: "widget.js")
             booted.registry.drain()
 

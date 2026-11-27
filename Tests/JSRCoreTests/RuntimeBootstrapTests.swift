@@ -70,4 +70,28 @@ private final class RecordingEngine: JsEngine {
         engine.dispose()
         #expect(engine.disposed)
     }
+
+    /// Review 2026-11-26, finding 6: `__IID` goes through the JSON encoder,
+    /// so quotes and backslashes survive the bridge boundary intact.
+    @Test func iidWithQuotesAndBackslashesReachesTheEngineIntact() throws {
+        let engine = JsContextEngine()
+        let runtime = JsWidgetRuntime(engine: engine)
+        let nasty = "host said \"hi\" and left\\"
+        try runtime.start(sink: { _, _ in }, iid: nasty)
+        #expect(engine.evaluate("__IID") as? String == nasty)
+    }
+
+    /// Same for the actionId of `callEvent` (backslash-quoting used to miss).
+    @Test func callEventCarriesQuotesAndBackslashesInTheActionId() throws {
+        let engine = JsContextEngine()
+        let runtime = JsWidgetRuntime(engine: engine)
+        var seen: [(String, String)] = []
+        try runtime.start(sink: { seen.append(($0, $1)) }, iid: "i")
+        try engine.eval("jsr._handler = function(action, payload) { sendMessage('echo', action); };", sourceName: "<t>")
+        let nasty = "tap\"me\\again"
+        try runtime.callEvent(nasty, payloadJson: "{}")
+        #expect(seen.count == 1)
+        #expect(seen.first?.0 == "echo")
+        #expect(seen.first?.1 == nasty)
+    }
 }

@@ -174,4 +174,30 @@ import Foundation
             #expect(registry.registry.handler(for: channel) != nil, "missing handler for \(channel)")
         }
     }
+
+    /// Review 2026-11-26, finding 4: a resolution produced off the main
+    /// thread (URLSession completion queue) reaches the registry safely while
+    /// the host loop drains — one lock guards the queue for every producer.
+    @Test func backgroundResolutionLandsWhileMainDrains() throws {
+        final class AsyncHttp: HttpService {
+            func fetch(_ request: FetchRequest, completion: @escaping (Any) -> Void) {
+                DispatchQueue.global().async {
+                    completion(["answer": 42])
+                }
+            }
+        }
+        let host = try TestHost.make(services: HostServices(http: AsyncHttp()))
+        for index in 0..<20 {
+            try host.eval("jsr.fetchJson('http://stub.local/api').then(function(d){ console.log('r\(index):' + d.answer); });")
+        }
+        // drain on the test thread while completions land on the global queue
+        let deadline = Date().addingTimeInterval(5)
+        while host.recorder.consoleLines.count < 20 && Date() < deadline {
+            host.registry.drain()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.002))
+        }
+        host.registry.drain()
+        let answered = host.recorder.consoleLines.filter { $0.hasPrefix("r") && $0.hasSuffix(":42") }
+        #expect(answered.count == 20, "expected all 20 background resolutions, got \(host.recorder.consoleLines)")
+    }
 }
