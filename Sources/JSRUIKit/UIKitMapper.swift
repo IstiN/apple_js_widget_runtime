@@ -514,16 +514,25 @@ public final class UIKitMapper: NSObject {
                 view.centerYAnchor.constraint(equalTo: parent.centerYAnchor),
             ])
         } else {
+            let inset = Self.hostingInset(of: parentRecord)
             NSLayoutConstraint.activate([
-                view.topAnchor.constraint(equalTo: parent.topAnchor),
-                view.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
-                view.trailingAnchor.constraint(lessThanOrEqualTo: parent.trailingAnchor),
-                // A3 content height: a plain container has no intrinsic height;
-                // the parent must reach at least to the child's bottom or a
-                // scroll document collapses to zero contentSize.
-                parent.bottomAnchor.constraint(greaterThanOrEqualTo: view.bottomAnchor),
+                view.topAnchor.constraint(equalTo: parent.topAnchor, constant: inset),
+                view.leadingAnchor.constraint(equalTo: parent.leadingAnchor, constant: inset),
+                view.trailingAnchor.constraint(lessThanOrEqualTo: parent.trailingAnchor, constant: -inset),
+                // the parent reaches to the child's bottom (+ inset): a plain
+                // container has no intrinsic height, and a scroll document
+                // collapses to zero contentSize without this
+                parent.bottomAnchor.constraint(greaterThanOrEqualTo: view.bottomAnchor, constant: inset),
             ])
         }
+    }
+
+    /// Hosting inset of a plain container: padding + margin (logical points;
+    /// the reference container wraps its children in these).
+    static func hostingInset(of record: WidgetNode) -> CGFloat {
+        let padding = (record.props["padding"] as? NSNumber)?.doubleValue ?? 0
+        let margin = (record.props["margin"] as? NSNumber)?.doubleValue ?? 0
+        return CGFloat(padding + margin)
     }
 
     // MARK: - dump (AUI section 2)

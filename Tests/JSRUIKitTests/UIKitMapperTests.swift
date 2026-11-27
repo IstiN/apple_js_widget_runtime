@@ -287,12 +287,11 @@ private struct UIKitTestHost {
     @Test func scrollStateDumpedAndFlickReachesTheEnd() throws {
         let host = try UIKitTestHost.make()
         try host.engine.eval("""
-        jsr.render({type:'scroll',children:[{type:'column',children:[
-          {type:'container',padding:16,margin:6,children:[{type:'text',data:'row'}]},
-          {type:'container',padding:16,margin:6,children:[{type:'text',data:'row'}]},
-          {type:'container',padding:16,margin:6,children:[{type:'text',data:'row'}]},
-          {type:'container',padding:16,margin:6,children:[{type:'text',data:'row'}]},
-          {type:'container',padding:16,margin:6,children:[{type:'text',data:'row'}]}]}]});
+        var rows = [];
+        for (var i = 0; i < 30; i++) {
+          rows.push({type:'container',padding:16,margin:6,children:[{type:'text',data:'row ' + i}]});
+        }
+        jsr.render({type:'scroll',children:[{type:'column',children:rows}]});
         """, sourceName: "<t>")
         host.registry.drain()
         let driver = UIKitInteractionDriver(mapper: host.mapper, runtime: host.runtime, registry: host.registry, engine: host.engine)
